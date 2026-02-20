@@ -47,3 +47,17 @@ nul
 # Jupyter
 .ipynb_checkpoints/
 untitled/
+
+# ── Frontend (Next.js) ──────────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.production
+
+# Next.js build output
+frontend/.vercel
+
+# TypeScript build info
+frontend/tsconfig.tsbuildinfo
+frontend/next-env.d.ts
