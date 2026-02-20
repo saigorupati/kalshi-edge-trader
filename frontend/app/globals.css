@@ -1,0 +1,156 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base reset ─────────────────────────────────────────────────── */
+:root {
+  --bg-primary:   #0a0a0f;
+  --bg-secondary: #0f0f18;
+  --bg-card:      #13131f;
+  --bg-border:    #1e1e30;
+
+  --cyan:   #00d4ff;
+  --green:  #00ff88;
+  --red:    #ff3366;
+  --yellow: #ffcc00;
+  --purple: #9b59ff;
+  --orange: #ff8c00;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background-color: var(--bg-primary);
+  color: #e8e8f0;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  scrollbar-width: thin;
+  scrollbar-color: #1e1e30 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e1e30; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2a2a45; }
+
+/* ── Typography helpers ─────────────────────────────────────────── */
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ── Bloomberg-style card ───────────────────────────────────────── */
+@layer components {
+  .card {
+    @apply bg-bg-card border border-bg-border rounded-lg;
+  }
+
+  .card-header {
+    @apply px-4 py-3 border-b border-bg-border flex items-center justify-between;
+  }
+
+  .card-title {
+    @apply text-xs font-semibold tracking-widest uppercase text-text-secondary font-mono;
+  }
+
+  /* Stat value */
+  .stat-value {
+    @apply text-2xl font-bold font-mono tracking-tight;
+  }
+
+  /* Pill badge */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium;
+  }
+
+  .badge-green  { @apply badge bg-green-950/60 text-accent-green border border-accent-green/20; }
+  .badge-red    { @apply badge bg-red-950/60 text-accent-red border border-accent-red/20; }
+  .badge-yellow { @apply badge bg-yellow-950/60 text-accent-yellow border border-accent-yellow/20; }
+  .badge-cyan   { @apply badge bg-cyan-950/60 text-accent-cyan border border-accent-cyan/20; }
+  .badge-purple { @apply badge bg-purple-950/60 text-accent-purple border border-accent-purple/20; }
+
+  /* Table */
+  .data-table {
+    @apply w-full text-sm font-mono;
+  }
+  .data-table th {
+    @apply text-left text-[10px] tracking-widest uppercase text-text-muted px-3 py-2 border-b border-bg-border;
+  }
+  .data-table td {
+    @apply px-3 py-2.5 border-b border-bg-border/50 text-text-primary;
+  }
+  .data-table tr:hover td {
+    @apply bg-bg-hover;
+  }
+  .data-table tr:last-child td {
+    @apply border-b-0;
+  }
+
+  /* Status dot */
+  .dot { @apply inline-block w-2 h-2 rounded-full; }
+  .dot-green  { @apply dot bg-accent-green animate-pulse; }
+  .dot-red    { @apply dot bg-accent-red; }
+  .dot-yellow { @apply dot bg-accent-yellow animate-pulse; }
+  .dot-muted  { @apply dot bg-text-muted; }
+
+  /* Button */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded
+           text-xs font-mono font-semibold transition-all duration-150 cursor-pointer
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-red {
+    @apply btn bg-red-900/40 text-accent-red border border-accent-red/30
+           hover:bg-red-900/70 hover:border-accent-red/60 active:scale-95;
+  }
+  .btn-cyan {
+    @apply btn bg-cyan-900/30 text-accent-cyan border border-accent-cyan/30
+           hover:bg-cyan-900/60 hover:border-accent-cyan/60 active:scale-95;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-text-secondary border border-bg-border
+           hover:bg-bg-hover hover:text-text-primary;
+  }
+
+  /* Animated number flash on update */
+  .flash-update {
+    animation: flashUpdate 0.6s ease-out;
+  }
+}
+
+@keyframes flashUpdate {
+  0%   { background-color: rgba(0, 212, 255, 0.15); }
+  100% { background-color: transparent; }
+}
+
+/* ── Chart overrides (Recharts) ─────────────────────────────────── */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #13131f !important;
+  border: 1px solid #1e1e30 !important;
+  border-radius: 6px !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 12px !important;
+}
+
+.recharts-tooltip-label {
+  color: #8888aa !important;
+}
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: #1e1e30 !important;
+}
+
+.recharts-xAxis .recharts-cartesian-axis-tick-value,
+.recharts-yAxis .recharts-cartesian-axis-tick-value {
+  fill: #555577 !important;
+  font-size: 10px !important;
+  font-family: 'JetBrains Mono', monospace !important;
+}

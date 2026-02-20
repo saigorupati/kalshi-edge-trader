@@ -386,6 +386,86 @@ class KalshiClient:
             return None
 
     # ------------------------------------------------------------------
+    # Order management (cancel, query)
+    # ------------------------------------------------------------------
+
+    def _delete(self, path: str) -> dict:
+        """Authenticated DELETE request."""
+        self._rate_limit()
+        url = self.base_url + path
+        headers = {"Content-Type": "application/json"}
+        headers.update(self._sign_request("DELETE", path))
+        resp = requests.delete(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
+    def cancel_order(self, order_id: str) -> dict:
+        """
+        DELETE /portfolio/orders/{order_id}
+        Cancels a resting open order on Kalshi.
+        In paper mode: returns a mock cancellation response.
+        """
+        if TRADING_MODE == "paper":
+            logger.info("[PAPER] Would cancel order: %s", order_id)
+            return {"order": {"order_id": order_id, "status": "canceled"}}
+
+        if self._private_key is None:
+            logger.error("Cannot cancel order: no private key configured")
+            return {}
+
+        try:
+            result = self._delete(f"/portfolio/orders/{order_id}")
+            logger.info("Canceled order: %s", order_id)
+            return result
+        except requests.HTTPError as e:
+            logger.error("Failed to cancel order %s: %s", order_id, e)
+            return {}
+
+    def get_open_orders(self) -> List[dict]:
+        """
+        GET /portfolio/orders?status=resting
+        Returns list of open (resting) orders from the Kalshi portfolio.
+        In paper mode: returns empty list (no real orders exist).
+        """
+        if TRADING_MODE == "paper" or self._private_key is None:
+            return []
+        try:
+            data = self._get("/portfolio/orders", params={"status": "resting"})
+            return data.get("orders", [])
+        except Exception as e:
+            logger.error("Failed to fetch open orders: %s", e)
+            return []
+
+    def get_positions(self) -> List[dict]:
+        """
+        GET /portfolio/positions
+        Returns all current open positions with quantity, cost, and P&L.
+        In paper mode: returns empty list.
+        """
+        if TRADING_MODE == "paper" or self._private_key is None:
+            return []
+        try:
+            data = self._get("/portfolio/positions")
+            return data.get("market_positions", [])
+        except Exception as e:
+            logger.error("Failed to fetch positions: %s", e)
+            return []
+
+    def get_order_status(self, order_id: str) -> Optional[dict]:
+        """
+        GET /portfolio/orders/{order_id}
+        Returns current status of a specific order.
+        """
+        if self._private_key is None:
+            return None
+        try:
+            data = self._get(f"/portfolio/orders/{order_id}")
+            return data.get("order", data)
+        except Exception as e:
+            logger.error("Failed to fetch order status %s: %s", order_id, e)
+            return None
+
+    # ------------------------------------------------------------------
     # Convenience
     # ------------------------------------------------------------------
 

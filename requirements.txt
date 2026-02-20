@@ -24,6 +24,12 @@ python-dotenv>=1.0.0
 # Optional: equity curve plotting in backtest
 matplotlib>=3.8.0
 
+# Web Dashboard API
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+websockets>=12.0
+python-multipart>=0.0.9
+
 # Testing
 pytest>=7.4.0
 pytest-mock>=3.12.0

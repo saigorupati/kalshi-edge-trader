@@ -16,6 +16,7 @@ Usage:
 Environment variables: see .env.example
 """
 
+import os
 import signal
 import sys
 import logging
@@ -47,6 +48,7 @@ from trading.executor import TradeExecutor
 from trading.risk import RiskManager
 from portfolio.tracker import PortfolioTracker
 from dashboard import print_cycle_report, log_cycle_summary
+from api.server import start_api_server, update_scanner_state
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -188,6 +190,12 @@ def trading_cycle() -> None:
     except Exception as e:
         logger.error("Dashboard error: %s", e)
 
+    # --- Push scanner results to API server (WebSocket broadcast) ---
+    try:
+        update_scanner_state(opps_by_city, dist_by_city, _cycle_count)
+    except Exception as e:
+        logger.error("Failed to update scanner state: %s", e)
+
     logger.info("Cycle #%d complete.", _cycle_count)
 
 
@@ -257,6 +265,16 @@ def initialize() -> None:
         update_city_calibration(_db)
     except Exception as e:
         logger.warning("Initial calibration update skipped: %s", e)
+
+    # Start FastAPI dashboard server in background thread
+    start_api_server(
+        db=_db,
+        kalshi=_kalshi,
+        risk=_risk,
+        tracker=_tracker,
+        host="0.0.0.0",
+        port=int(os.getenv("API_PORT", "8000")),
+    )
 
     logger.info("Initialization complete.")
 
