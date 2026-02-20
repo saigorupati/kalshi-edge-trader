@@ -18,7 +18,12 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Sort-Object:*)",
       "Bash(curl:*)",
-      "Bash(.venv/Scripts/python:*)"
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(npm audit:*)",
+      "Bash(python -c:*)",
+      "Bash(npm install:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

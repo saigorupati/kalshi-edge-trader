@@ -266,10 +266,14 @@ class KalshiClient:
         return result
 
     def get_markets_for_series_tomorrow(self, series_ticker: str) -> List[KalshiMarket]:
-        """GET /markets by series, then select tomorrow's event ticker in ET."""
+        """GET /markets by series, then select tomorrow's markets in ET.
+
+        Matches on close_time date (authoritative) rather than an inferred
+        event_ticker string, so the real Kalshi ticker format doesn't need to
+        match the local guess exactly.
+        """
         now_market_tz = datetime.datetime.now(tz=KALSHI_MARKET_TZ)
         tomorrow = now_market_tz.date() + datetime.timedelta(days=1)
-        target_event_ticker = self._format_event_ticker_for_date(series_ticker, tomorrow)
 
         markets: List[dict] = []
         try:
@@ -283,11 +287,21 @@ class KalshiClient:
             return []
 
         filtered = []
-        target_event_ticker_lower = target_event_ticker.lower()
         for m in markets:
-            event_ticker = str(m.get("event_ticker", ""))
-            if event_ticker.lower() != target_event_ticker_lower:
+            # Match by close_time date converted to ET
+            close_time = m.get("close_time", "")
+            if close_time:
+                try:
+                    close_dt = datetime.datetime.fromisoformat(close_time.replace("Z", "+00:00"))
+                    if close_dt.tzinfo is None:
+                        close_dt = close_dt.replace(tzinfo=datetime.timezone.utc)
+                    if close_dt.astimezone(KALSHI_MARKET_TZ).date() != tomorrow:
+                        continue
+                except ValueError:
+                    continue
+            else:
                 continue
+
             market_status = (m.get("status", "").lower() or "open")
             if market_status not in {"open", "active"}:
                 continue
@@ -306,7 +320,7 @@ class KalshiClient:
 
                 result.append(KalshiMarket(
                     ticker=m["ticker"],
-                    event_ticker=str(m.get("event_ticker", target_event_ticker)),
+                    event_ticker=str(m.get("event_ticker", "")),
                     yes_ask=yes_ask,
                     yes_bid=yes_bid,
                     yes_sub_title=subtitle,
