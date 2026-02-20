@@ -288,18 +288,7 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
               No open positions
             </div>
           ) : (
-            <table className="data-table w-full" style={{tableLayout:'fixed'}}>
-              <colgroup>
-                <col style={{width:'52px'}} />   {/* City   */}
-                <col />                           {/* Ticker — takes remaining space */}
-                <col style={{width:'40px'}} />   {/* Qty    */}
-                <col style={{width:'58px'}} />   {/* Entry$ */}
-                <col style={{width:'58px'}} />   {/* Last$  */}
-                <col style={{width:'60px'}} />   {/* Model% */}
-                <col style={{width:'48px'}} />   {/* Edge   */}
-                <col style={{width:'88px'}} />   {/* P&L    */}
-                <col style={{width:'60px'}} />   {/* Action */}
-              </colgroup>
+            <table className="data-table w-full">
               <thead>
                 <tr>
                   <th>City</th>
@@ -331,27 +320,27 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
                       <td className="text-right">${entryPrice.toFixed(2)}</td>
                       <td className={clsx(
                         'text-right',
-                        mktDiff === null ? 'text-text-muted'
-                          : mktDiff > 0 ? 'text-accent-green'
-                          : mktDiff < 0 ? 'text-accent-red'
-                          : 'text-text-primary'
+                        mktDiff === null ? '!text-text-muted'
+                          : mktDiff > 0 ? '!text-accent-green'
+                          : mktDiff < 0 ? '!text-accent-red'
+                          : ''
                       )}>
                         {mktPrice !== null ? `$${mktPrice.toFixed(2)}` : '—'}
                       </td>
-                      <td className="text-right text-accent-purple">
+                      <td className="text-right !text-accent-purple">
                         {(p.model_prob * 100).toFixed(1)}%
                       </td>
                       <td className={clsx(
                         'text-right',
-                        p.edge >= 0.05 ? 'text-accent-green' : 'text-accent-yellow'
+                        p.edge >= 0.05 ? '!text-accent-green' : '!text-accent-yellow'
                       )}>
                         {(p.edge * 100).toFixed(1)}%
                       </td>
                       <td className={clsx(
                         'text-right font-semibold',
-                        unreal === null  ? 'text-text-muted'
-                          : unreal >= 0 ? 'text-accent-green'
-                          : 'text-accent-red'
+                        unreal === null  ? '!text-text-muted'
+                          : unreal >= 0 ? '!text-accent-green'
+                          : '!text-accent-red'
                       )}>
                         {unreal !== null
                           ? `${unreal >= 0 ? '+' : ''}$${unreal.toFixed(2)}`
