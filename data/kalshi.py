@@ -168,6 +168,10 @@ class KalshiClient:
             logger.error("Failed to get events for series %s: %s", series_ticker, e)
             return []
 
+    def _format_event_ticker_for_date(self, series_ticker: str, date_value: datetime.date) -> str:
+        """Construct canonical Kalshi event ticker suffix YYmonDD, e.g. KXHIGHNY-26feb20."""
+        return f"{series_ticker}-{date_value.strftime('%y%b%d').lower()}"
+
     def get_tomorrow_event_ticker(self, series_ticker: str) -> Optional[str]:
         """
         Finds the event ticker for tomorrow's date in a given series.
@@ -193,8 +197,13 @@ class KalshiClient:
             except (ValueError, KeyError):
                 continue
 
-        logger.warning("No tomorrow event found for series %s", series_ticker)
-        return None
+        fallback_ticker = self._format_event_ticker_for_date(series_ticker, tomorrow)
+        logger.warning(
+            "No tomorrow event found for series %s via /events; falling back to inferred ticker %s",
+            series_ticker,
+            fallback_ticker,
+        )
+        return fallback_ticker
 
     def get_markets_for_event(self, event_ticker: str) -> List[KalshiMarket]:
         """GET /markets?event_ticker={ticker}&status=open"""
