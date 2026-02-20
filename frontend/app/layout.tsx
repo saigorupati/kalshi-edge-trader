@@ -4,6 +4,9 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Kalshi Edge Trader',
   description: 'Live trading dashboard for the Kalshi temperature edge strategy',
+  icons: {
+    icon: '/icon.svg',
+  },
 };
 
 export default function RootLayout({
