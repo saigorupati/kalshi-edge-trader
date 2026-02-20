@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 MAX_SPREAD_TO_TRADE = 0.12   # Skip illiquid markets with spread > 12 cents
 MIN_VOLUME_TO_TRADE = 5      # Skip markets with very low volume
+MIN_ASK_TO_TRADE = 0.05      # Skip markets priced below 5¢ — fee makes them unprofitable
+MAX_ASK_TO_TRADE = 0.95      # Skip near-certain markets — no meaningful edge possible
 
 
 @dataclass
@@ -48,10 +50,16 @@ def compute_edge(
 
     Returns:
         (raw_edge, fee_cost, net_edge)
+
+    Fee model: Kalshi charges ~1% of notional (payout) per contract,
+    i.e. $0.01 per $1 contract.  As a fraction of the premium paid,
+    fee_cost = KALSHI_FEE_RATE / ask_price.  At 5¢ ask this is 20% —
+    far exceeding any realistic edge — which is why we also gate on
+    MIN_ASK_TO_TRADE in evaluate_market.
     """
     raw_edge = model_prob - ask_price
-    # Fee is ~1% of the notional traded (per contract that pays $1)
-    fee_cost = KALSHI_FEE_RATE
+    # Fee expressed as a fraction of premium (not flat cents)
+    fee_cost = KALSHI_FEE_RATE / ask_price if ask_price > 0 else 1.0
     net_edge = raw_edge - fee_cost
     return raw_edge, fee_cost, net_edge
 
@@ -77,6 +85,17 @@ def evaluate_market(
     if ask is None or ask <= 0.01 or ask >= 0.99:
         return None  # Near-trivial market
 
+    # Gate on tradeable ask range before computing anything else
+    if ask < MIN_ASK_TO_TRADE:
+        logger.debug(
+            "Skipping %s: ask %.2f below min %.2f (fee would exceed any edge)",
+            market.ticker, ask, MIN_ASK_TO_TRADE,
+        )
+        return None
+    if ask > MAX_ASK_TO_TRADE:
+        logger.debug("Skipping %s: ask %.2f above max %.2f", market.ticker, ask, MAX_ASK_TO_TRADE)
+        return None
+
     spread = ob.spread() or 1.0
     if spread > MAX_SPREAD_TO_TRADE:
         logger.debug("Skipping %s: spread too wide (%.2f)", market.ticker, spread)
@@ -86,12 +105,27 @@ def evaluate_market(
         logger.debug("Skipping %s: low volume (%d)", market.ticker, market.volume)
         return None
 
+    # Guard: skip market if temp range could not be parsed from subtitle
+    if market.temp_low is None and market.temp_high is None \
+            and not market.is_open_low and not market.is_open_high:
+        logger.debug(
+            "Skipping %s: could not parse temp range from subtitle %r",
+            market.ticker, market.yes_sub_title,
+        )
+        return None
+
     # Compute model probability for this bin
     model_prob = bin_probability(
         dist.mu, dist.sigma,
         market.temp_low, market.temp_high,
         market.is_open_low, market.is_open_high,
     )
+
+    # A model_prob of 0.0 means the bin is outside our distribution —
+    # do not treat this as a tradeable edge against a low ask price.
+    if model_prob <= 0.0:
+        logger.debug("Skipping %s: model_prob=0.0 (bin outside distribution)", market.ticker)
+        return None
 
     raw_edge, fee_cost, net_edge = compute_edge(model_prob, ask)
     has_edge = net_edge >= MIN_EDGE_THRESHOLD

@@ -178,6 +178,10 @@ async function fetchScanner(): Promise<ScannerState> {
     cycle_number: number;
     opportunities: Record<string, Array<{
       ticker: string;
+      temp_low?: number;
+      temp_high?: number;
+      is_open_low: boolean;
+      is_open_high: boolean;
       model_prob: number;
       ask_price: number;
       net_edge: number;
@@ -192,14 +196,16 @@ async function fetchScanner(): Promise<ScannerState> {
     for (const o of cityOpps) {
       opps.push({
         city,
-        ticker:      o.ticker,
-        model_prob:  o.model_prob,
-        ask:         o.ask_price,
-        net_edge:    o.net_edge,
-        mu:          raw.dist_by_city?.[city]?.mu   ?? 0,
-        sigma:       raw.dist_by_city?.[city]?.sigma ?? 0,
-        is_open_low:  false,
-        is_open_high: false,
+        ticker:       o.ticker,
+        temp_low:     o.temp_low,
+        temp_high:    o.temp_high,
+        is_open_low:  o.is_open_low  ?? false,
+        is_open_high: o.is_open_high ?? false,
+        model_prob:   o.model_prob,
+        ask:          o.ask_price,
+        net_edge:     o.net_edge,
+        mu:           raw.dist_by_city?.[city]?.mu    ?? 0,
+        sigma:        raw.dist_by_city?.[city]?.sigma  ?? 0,
       });
     }
   }

@@ -72,15 +72,19 @@ def update_scanner_state(
     for city_code, opps in opportunities_by_city.items():
         opps_serialized[city_code] = [
             {
-                "ticker": o.market.ticker,
-                "temp_range": o.market.yes_sub_title,
-                "model_prob": round(o.model_prob, 4),
-                "ask_price": round(o.ask_price, 4),
-                "bid_price": round(o.bid_price, 4),
-                "spread": round(o.spread, 4),
-                "raw_edge": round(o.raw_edge, 4),
-                "net_edge": round(o.net_edge, 4),
-                "has_edge": o.has_edge,
+                "ticker":        o.market.ticker,
+                "temp_range":    o.market.yes_sub_title,
+                "temp_low":      o.market.temp_low,
+                "temp_high":     o.market.temp_high,
+                "is_open_low":   o.market.is_open_low,
+                "is_open_high":  o.market.is_open_high,
+                "model_prob":    round(o.model_prob, 4),
+                "ask_price":     round(o.ask_price, 4),
+                "bid_price":     round(o.bid_price, 4),
+                "spread":        round(o.spread, 4),
+                "raw_edge":      round(o.raw_edge, 4),
+                "net_edge":      round(o.net_edge, 4),
+                "has_edge":      o.has_edge,
                 "ev_per_dollar": round(o.ev_per_dollar, 4),
             }
             for o in opps[:12]

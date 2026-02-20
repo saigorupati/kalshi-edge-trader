@@ -171,14 +171,9 @@ class KalshiClient:
     # ------------------------------------------------------------------
 
     def get_events_for_series(self, series_ticker: str) -> List[dict]:
-        """GET /events?series_ticker={series}. Try open first, then all."""
+        """GET /events?series_ticker={series}&status=open."""
         try:
             data = self._get("/events", params={"series_ticker": series_ticker, "status": "open"})
-            events = data.get("events", [])
-            if events:
-                return events
-
-            data = self._get("/events", params={"series_ticker": series_ticker, "status": "all"})
             return data.get("events", [])
         except Exception as e:
             logger.error("Failed to get events for series %s: %s", series_ticker, e)
@@ -193,22 +188,28 @@ class KalshiClient:
         Finds the event ticker for tomorrow's date in a given series.
         Uses Kalshi market timezone (America/New_York) so deployments running in UTC
         still target the correct "tomorrow" market from a US trading perspective.
+
+        Kalshi close_time for a daily temperature market is ~midnight UTC at the end
+        of the *measurement* day — e.g. the Feb 20 event closes at 2026-02-21T04:59Z
+        (= 11:59pm ET Feb 20).  So event_date == close_time_ET.date() - 1 day.
+        We want tomorrow's event, meaning close_time_ET.date() == tomorrow + 1 day.
         """
         now_market_tz = datetime.datetime.now(tz=KALSHI_MARKET_TZ)
         tomorrow = now_market_tz.date() + datetime.timedelta(days=1)
-        events = self.get_events_for_series(series_ticker)
+        # The close_time ET date for a "tomorrow" event is tomorrow + 1
+        expected_close_date = tomorrow + datetime.timedelta(days=1)
 
+        events = self.get_events_for_series(series_ticker)
         for event in events:
             close_time = event.get("close_time", "")
             if not close_time:
                 continue
             try:
-                # close_time is ISO8601, typically UTC (e.g. "2026-02-20T20:00:00Z")
                 close_dt = datetime.datetime.fromisoformat(close_time.replace("Z", "+00:00"))
                 if close_dt.tzinfo is None:
                     close_dt = close_dt.replace(tzinfo=datetime.timezone.utc)
-                close_date = close_dt.astimezone(KALSHI_MARKET_TZ).date()
-                if close_date == tomorrow:
+                close_date_et = close_dt.astimezone(KALSHI_MARKET_TZ).date()
+                if close_date_et == expected_close_date:
                     return event["event_ticker"]
             except (ValueError, KeyError):
                 continue
@@ -222,14 +223,11 @@ class KalshiClient:
         return fallback_ticker
 
     def get_markets_for_event(self, event_ticker: str) -> List[KalshiMarket]:
-        """GET /markets?event_ticker={ticker}. Try open first, then all."""
+        """GET /markets?event_ticker={ticker}&status=open."""
         markets: List[dict] = []
         try:
             data = self._get("/markets", params={"event_ticker": event_ticker, "status": "open"})
             markets = data.get("markets", [])
-            if not markets:
-                data = self._get("/markets", params={"event_ticker": event_ticker, "status": "all"})
-                markets = data.get("markets", [])
         except Exception as e:
             logger.error("Failed to get markets for event %s: %s", event_ticker, e)
             return []
@@ -239,8 +237,8 @@ class KalshiClient:
             try:
                 yes_ask = self._parse_price(m.get("yes_ask") or m.get("yes_ask_price") or 0)
                 yes_bid = self._parse_price(m.get("yes_bid") or m.get("yes_bid_price") or 0)
-                subtitle = m.get("yes_sub_title", m.get("subtitle", ""))
-                temp_low, temp_high, is_open_low, is_open_high = self._parse_temp_range(subtitle)
+                subtitle = m.get("yes_sub_title") or m.get("subtitle") or ""
+                temp_low, temp_high, is_open_low, is_open_high = self._parse_bounds_from_market(m)
 
                 market_status = (m.get("status", "").lower() or "open")
                 if market_status not in {"open", "active"}:
@@ -266,40 +264,39 @@ class KalshiClient:
         return result
 
     def get_markets_for_series_tomorrow(self, series_ticker: str) -> List[KalshiMarket]:
-        """GET /markets by series, then select tomorrow's markets in ET.
+        """GET /markets?series_ticker=...&status=open, filtered to tomorrow's event.
 
-        Matches on close_time date (authoritative) rather than an inferred
-        event_ticker string, so the real Kalshi ticker format doesn't need to
-        match the local guess exactly.
+        Kalshi close_time for a daily temperature market is ~midnight UTC at the end
+        of the measurement day — e.g. the Feb 20 event closes at 2026-02-21T04:59Z
+        (= 11:59pm ET Feb 20).  So event_date == close_time_ET.date() - 1 day.
+        We want tomorrow's event, so we keep markets where close_time_ET.date()
+        == tomorrow + 1 day.
         """
         now_market_tz = datetime.datetime.now(tz=KALSHI_MARKET_TZ)
         tomorrow = now_market_tz.date() + datetime.timedelta(days=1)
+        # A "tomorrow" event closes at midnight ET on the day after tomorrow
+        expected_close_date = tomorrow + datetime.timedelta(days=1)
 
         markets: List[dict] = []
         try:
             data = self._get("/markets", params={"series_ticker": series_ticker, "status": "open"})
             markets = data.get("markets", [])
-            if not markets:
-                data = self._get("/markets", params={"series_ticker": series_ticker, "status": "all"})
-                markets = data.get("markets", [])
         except Exception as e:
             logger.error("Failed to get markets for series %s: %s", series_ticker, e)
             return []
 
         filtered = []
         for m in markets:
-            # Match by close_time date converted to ET
             close_time = m.get("close_time", "")
-            if close_time:
-                try:
-                    close_dt = datetime.datetime.fromisoformat(close_time.replace("Z", "+00:00"))
-                    if close_dt.tzinfo is None:
-                        close_dt = close_dt.replace(tzinfo=datetime.timezone.utc)
-                    if close_dt.astimezone(KALSHI_MARKET_TZ).date() != tomorrow:
-                        continue
-                except ValueError:
+            if not close_time:
+                continue
+            try:
+                close_dt = datetime.datetime.fromisoformat(close_time.replace("Z", "+00:00"))
+                if close_dt.tzinfo is None:
+                    close_dt = close_dt.replace(tzinfo=datetime.timezone.utc)
+                if close_dt.astimezone(KALSHI_MARKET_TZ).date() != expected_close_date:
                     continue
-            else:
+            except ValueError:
                 continue
 
             market_status = (m.get("status", "").lower() or "open")
@@ -315,8 +312,8 @@ class KalshiClient:
             try:
                 yes_ask = self._parse_price(m.get("yes_ask") or m.get("yes_ask_price") or 0)
                 yes_bid = self._parse_price(m.get("yes_bid") or m.get("yes_bid_price") or 0)
-                subtitle = m.get("yes_sub_title", m.get("subtitle", ""))
-                temp_low, temp_high, is_open_low, is_open_high = self._parse_temp_range(subtitle)
+                subtitle = m.get("yes_sub_title") or m.get("subtitle") or ""
+                temp_low, temp_high, is_open_low, is_open_high = self._parse_bounds_from_market(m)
 
                 result.append(KalshiMarket(
                     ticker=m["ticker"],
@@ -350,38 +347,94 @@ class KalshiClient:
 
     def _parse_temp_range(self, subtitle: str) -> Tuple[Optional[float], Optional[float], bool, bool]:
         """
-        Parse temperature range from Kalshi market subtitle.
-        "57° to 58°"    → (57.0, 58.0, False, False)
-        "55° or lower"  → (None, 55.0, True,  False)
-        "72° or higher" → (72.0, None, False, True)
+        Parse temperature range from a Kalshi market yes_sub_title string.
+
+        Confirmed real Kalshi subtitle formats (as of Feb 2026):
+          "62° to 63°"    → bounded bin  (57.0, 58.0, False, False)
+          "55° or below"  → open-low cap (None, 55.0, True,  False)
+          "64° or above"  → open-high    (64.0, None, False, True)
+
+        Also handles legacy / variant forms seen historically:
+          "X° or lower" / "X° or higher"
+          "Below X°"    / "Above X°"
+          "X°" alone    → treated as point estimate ±0.5°F
+
+        Degree sign is matched liberally (Unicode °, ASCII, or absent).
         """
-        # "X° to Y°" pattern
-        m = re.match(r"(\d+(?:\.\d+)?)°?\s*(?:to|-)\s*(\d+(?:\.\d+)?)°?", subtitle, re.IGNORECASE)
+        # Normalise: strip whitespace, collapse unicode degree variants to plain "°"
+        s = subtitle.strip().replace("\u00b0", "°").replace("\u02da", "°")
+
+        # Degree pattern fragment (degree sign optional, may have spaces)
+        DEG = r"[°]?\s*"
+        NUM = r"(\d+(?:\.\d+)?)"
+
+        # "X° to Y°"  or  "X° - Y°"
+        m = re.match(rf"{NUM}{DEG}(?:to|-)\s*{NUM}{DEG}$", s, re.IGNORECASE)
         if m:
             return float(m.group(1)), float(m.group(2)), False, False
 
-        # "X° or lower" / "X° or below"
-        m = re.match(r"(\d+(?:\.\d+)?)°?\s*or\s+(?:lower|below)", subtitle, re.IGNORECASE)
+        # "X° or below" / "X° or lower"
+        m = re.match(rf"{NUM}{DEG}or\s+(?:below|lower)\s*$", s, re.IGNORECASE)
         if m:
             return None, float(m.group(1)), True, False
 
-        # "X° or higher" / "X° or above"
-        m = re.match(r"(\d+(?:\.\d+)?)°?\s*or\s+(?:higher|above)", subtitle, re.IGNORECASE)
+        # "X° or above" / "X° or higher"
+        m = re.match(rf"{NUM}{DEG}or\s+(?:above|higher)\s*$", s, re.IGNORECASE)
         if m:
             return float(m.group(1)), None, False, True
 
-        # "Below X°"
-        m = re.match(r"below\s+(\d+(?:\.\d+)?)°?", subtitle, re.IGNORECASE)
+        # "Below X°" / "Under X°"
+        m = re.match(rf"(?:below|under)\s+{NUM}{DEG}$", s, re.IGNORECASE)
         if m:
             return None, float(m.group(1)), True, False
 
-        # "X°" alone — treat as a point estimate (±0.5°F)
-        m = re.match(r"(\d+(?:\.\d+)?)°?\s*$", subtitle)
+        # "Above X°" / "Over X°"
+        m = re.match(rf"(?:above|over)\s+{NUM}{DEG}$", s, re.IGNORECASE)
+        if m:
+            return float(m.group(1)), None, False, True
+
+        # "X°" alone — treat as a ±0.5°F point estimate
+        m = re.match(rf"{NUM}{DEG}$", s)
         if m:
             val = float(m.group(1))
             return val - 0.5, val + 0.5, False, False
 
         return None, None, False, False
+
+    def _parse_bounds_from_market(
+        self, raw: dict
+    ) -> Tuple[Optional[float], Optional[float], bool, bool]:
+        """
+        Derive temperature bounds from a raw Kalshi market dict.
+
+        Prefers the authoritative `floor_strike` + `strike_type` fields
+        (present in the API response) over subtitle text parsing.
+
+        Kalshi `strike_type` values observed:
+          "greater"   → YES if temp >  floor_strike  (open-high from floor_strike+1)
+          "less"      → YES if temp <  floor_strike  (open-low  up to floor_strike-1)
+          "between"   → YES if floor_strike <= temp <= ceil_strike (bounded)
+
+        Falls back to subtitle parsing when strike fields are absent.
+        """
+        strike = raw.get("floor_strike")
+        strike_type = (raw.get("strike_type") or "").lower()
+
+        if strike is not None and strike_type:
+            s = float(strike)
+            if strike_type == "greater":
+                # YES resolves if temp > strike, i.e. temp >= strike + 1
+                return s + 1.0, None, False, True
+            if strike_type == "less":
+                # YES resolves if temp < strike, i.e. temp <= strike - 1
+                return None, s - 1.0, True, False
+            if strike_type == "between":
+                ceil_strike = raw.get("ceil_strike") or raw.get("floor_strike")
+                return s, float(ceil_strike), False, False
+
+        # Fallback: parse yes_sub_title / subtitle text
+        subtitle = raw.get("yes_sub_title") or raw.get("subtitle") or ""
+        return self._parse_temp_range(subtitle)
 
     # ------------------------------------------------------------------
     # Orderbook

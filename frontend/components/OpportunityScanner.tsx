@@ -30,9 +30,11 @@ function EdgeBar({ edge }: { edge: number }) {
 }
 
 function formatRange(opp: Opportunity): string {
-  if (opp.is_open_low) return `< ${opp.temp_high}°F`;
-  if (opp.is_open_high) return `≥ ${opp.temp_low}°F`;
-  return `${opp.temp_low}–${opp.temp_high}°F`;
+  if (opp.is_open_low  && opp.temp_high != null) return `≤ ${opp.temp_high}°F`;
+  if (opp.is_open_high && opp.temp_low  != null) return `≥ ${opp.temp_low}°F`;
+  if (opp.temp_low != null && opp.temp_high != null) return `${opp.temp_low}–${opp.temp_high}°F`;
+  // Fallback: shouldn't happen after server fix, but avoids "undefined–undefined"
+  return '—';
 }
 
 export default function OpportunityScanner({ scanner, wsConnected }: Props) {
