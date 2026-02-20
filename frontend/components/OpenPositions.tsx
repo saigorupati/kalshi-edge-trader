@@ -4,6 +4,68 @@ import { useState } from 'react';
 import { OpenPosition, api, LimitSellResult } from '@/lib/api';
 import { clsx } from 'clsx';
 
+/**
+ * Convert a raw Kalshi ticker like "KXHIGHCHI-26FEB26-T35" into a
+ * human-readable label like "CHI 35-36° · Feb 26".
+ *
+ * Bucket floors by series:
+ *   CHI / NY / MIA / LAX:  34, 35, 37, 39, 41, 43  (lowest=34, highest=43)
+ *   PHX:                   61, 63, 65, 67, 69, 71  (lowest=61, highest=71)
+ */
+const SERIES_BUCKETS: Record<string, number[]> = {
+  KXHIGHCHI:  [34, 35, 37, 39, 41, 43],
+  KXHIGHNY:   [34, 35, 37, 39, 41, 43],
+  KXHIGHMIA:  [34, 35, 37, 39, 41, 43],
+  KXHIGHLAX:  [34, 35, 37, 39, 41, 43],
+  KXHIGHTPHX: [61, 63, 65, 67, 69, 71],
+};
+
+const CITY_MAP: Record<string, string> = {
+  KXHIGHCHI:  'CHI',
+  KXHIGHNY:   'NYC',
+  KXHIGHMIA:  'MIA',
+  KXHIGHLAX:  'LA',
+  KXHIGHTPHX: 'PHX',
+};
+
+/** "26FEB21" → "Feb 21" — Kalshi format is YRMONDD (year=26, month=FEB, day=21) */
+function parseDatePart(raw: string): string {
+  const m = raw.match(/^(\d{2})([A-Z]{3})(\d{2})$/i);
+  if (!m) return raw;
+  // m[1] = 2-digit year, m[2] = month abbrev, m[3] = day
+  const day   = parseInt(m[3], 10);
+  const month = m[2].charAt(0).toUpperCase() + m[2].slice(1).toLowerCase();
+  return `${month} ${day}`;
+}
+
+function friendlyTicker(ticker: string): string {
+  // e.g. "KXHIGHCHI-26FEB26-T35"
+  const parts = ticker.split('-');
+  if (parts.length < 3) return ticker;
+
+  const series   = parts[0];                      // "KXHIGHCHI"
+  const datePart = parts[parts.length - 2];       // "26FEB26"
+  const suffix   = parts[parts.length - 1];       // "T35"
+  const match    = suffix.match(/^T(\d+)$/i);
+  if (!match) return ticker;
+
+  const n       = parseInt(match[1], 10);
+  const buckets = SERIES_BUCKETS[series];
+  const city    = CITY_MAP[series] ?? series.replace('KXHIGH', '').replace(/^T/, '');
+  const date    = parseDatePart(datePart);
+
+  let range: string;
+  if (buckets) {
+    if (n === buckets[0])                       range = `≤${n}°`;
+    else if (n === buckets[buckets.length - 1]) range = `≥${n}°`;
+    else                                        range = `${n}-${n + 1}°`;
+  } else {
+    range = `${n}-${n + 1}°`;
+  }
+
+  return `${city} ${range} · ${date}`;
+}
+
 interface Props {
   positions: OpenPosition[];
   mode: string;
@@ -131,7 +193,9 @@ function SellModal({
         {/* Position summary */}
         <div className="px-4 pt-3 pb-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono text-text-secondary">
           <span>Ticker</span>
-          <span className="text-text-primary truncate">{position.ticker}</span>
+          <span className="text-text-primary truncate" title={position.ticker}>
+            {friendlyTicker(position.ticker)}
+          </span>
           <span>Contracts</span>
           <span className="text-text-primary">{position.count}</span>
           <span>Entry</span>
@@ -291,8 +355,7 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
             <table className="data-table w-full">
               <thead>
                 <tr>
-                  <th>City</th>
-                  <th>Ticker</th>
+                  <th>Market</th>
                   <th className="!text-right">Qty</th>
                   <th className="!text-right">Entry$</th>
                   <th className="!text-right">Last$</th>
@@ -310,11 +373,8 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
                   const mktDiff    = mktPrice !== null ? mktPrice - entryPrice : null;
                   return (
                     <tr key={p.trade_id} className="animate-fade-in">
-                      <td>
-                        <span className="badge badge-cyan">{p.city}</span>
-                      </td>
-                      <td className="text-text-secondary text-xs" style={{overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
-                        {p.ticker}
+                      <td className="font-mono text-sm" title={p.ticker}>
+                        {friendlyTicker(p.ticker)}
                       </td>
                       <td className="text-right">{p.count}</td>
                       <td className="text-right">${entryPrice.toFixed(2)}</td>

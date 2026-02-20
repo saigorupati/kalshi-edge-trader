@@ -196,12 +196,11 @@ def _serialize_trade(trade: dict) -> dict:
 def _compute_market_data(trade: dict) -> dict:
     """
     Returns:
-      - current_price:  last traded price from GET /markets/{ticker}
-      - unrealized_pnl: VWAP P&L walking the bid ladder against position size
-
-    last_price is used for display because it reflects real traded prices and
-    avoids the stale-orderbook problem (e.g. a 100-cent resting bid inflating P&L).
-    VWAP is still computed from the live bid ladder for the P&L estimate.
+      - current_price:  best valid YES bid from the live orderbook for this
+                        specific ticker (bucket-accurate, not event-level).
+                        last_price from GET /markets/{ticker} is event-level on
+                        Kalshi and bleeds across buckets — do NOT use it.
+      - unrealized_pnl: VWAP P&L walking the bid ladder against position size.
     """
     result = {"unrealized_pnl": None, "current_price": None}
     if _kalshi is None:
@@ -211,33 +210,22 @@ def _compute_market_data(trade: dict) -> dict:
         entry_price = trade["price_cents"] / 100.0
         ticker = trade["ticker"]
 
-        # --- Last traded price (display column) ---
-        mkt = _kalshi.get_market(ticker)
-        if mkt:
-            raw_last = mkt.get("last_price") or mkt.get("last_yes_price")
-            if raw_last is not None:
-                last_price = _kalshi._parse_price(raw_last)
-                # Sanity gate: ignore obviously stale 100-cent values
-                if 0.01 <= last_price <= 0.99:
-                    result["current_price"] = round(last_price, 2)
-
-        # --- VWAP P&L from bid ladder ---
+        # --- VWAP P&L from bid ladder (also gives us current_price) ---
         ob = _kalshi.get_orderbook(ticker, depth=20)
         if ob is None:
             return result
 
-        # Filter out any bids at 99–100¢ — these are almost always stale artefacts
+        # Filter out any bids at 99–100¢ — these are stale resting artefacts
         bids = sorted(
             [b for b in ob.yes_bids if b["price"] < 0.99],
             key=lambda x: x["price"],
             reverse=True,
         )
         if not bids:
-            # No valid bids — fall back to last_price for P&L if available
-            if result["current_price"] is not None:
-                lp = result["current_price"]
-                result["unrealized_pnl"] = round((lp - entry_price) * count, 4)
             return result
+
+        # Best valid bid = current market price for this bucket
+        result["current_price"] = round(bids[0]["price"], 2)
 
         remaining = count
         total_proceeds = 0.0
