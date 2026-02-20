@@ -185,8 +185,8 @@ class KalshiClient:
             return []
 
     def _format_event_ticker_for_date(self, series_ticker: str, date_value: datetime.date) -> str:
-        """Construct canonical Kalshi event ticker suffix YYmonDD, e.g. KXHIGHNY-26feb20."""
-        return f"{series_ticker}-{date_value.strftime('%y%b%d').lower()}"
+        """Construct canonical Kalshi event ticker suffix YYMONDD, e.g. KXHIGHNY-26FEB20."""
+        return f"{series_ticker}-{date_value.strftime('%y%b%d').upper()}"
 
     def get_tomorrow_event_ticker(self, series_ticker: str) -> Optional[str]:
         """
@@ -283,8 +283,10 @@ class KalshiClient:
             return []
 
         filtered = []
+        target_event_ticker_lower = target_event_ticker.lower()
         for m in markets:
-            if m.get("event_ticker") != target_event_ticker:
+            event_ticker = str(m.get("event_ticker", ""))
+            if event_ticker.lower() != target_event_ticker_lower:
                 continue
             market_status = (m.get("status", "").lower() or "open")
             if market_status not in {"open", "active"}:
@@ -304,7 +306,7 @@ class KalshiClient:
 
                 result.append(KalshiMarket(
                     ticker=m["ticker"],
-                    event_ticker=target_event_ticker,
+                    event_ticker=str(m.get("event_ticker", target_event_ticker)),
                     yes_ask=yes_ask,
                     yes_bid=yes_bid,
                     yes_sub_title=subtitle,
