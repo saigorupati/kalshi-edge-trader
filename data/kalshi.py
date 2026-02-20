@@ -15,6 +15,7 @@ import time
 import uuid
 import logging
 import datetime
+from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 20  # seconds
 MIN_REQUEST_INTERVAL = 0.1  # 100ms between API calls
+KALSHI_MARKET_TZ = ZoneInfo("America/New_York")
 
 
 @dataclass
@@ -169,19 +171,23 @@ class KalshiClient:
     def get_tomorrow_event_ticker(self, series_ticker: str) -> Optional[str]:
         """
         Finds the event ticker for tomorrow's date in a given series.
-        Kalshi event tickers include the date in their close_time field.
+        Uses Kalshi market timezone (America/New_York) so deployments running in UTC
+        still target the correct "tomorrow" market from a US trading perspective.
         """
-        tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+        now_market_tz = datetime.datetime.now(tz=KALSHI_MARKET_TZ)
+        tomorrow = now_market_tz.date() + datetime.timedelta(days=1)
         events = self.get_events_for_series(series_ticker)
 
         for event in events:
             close_time = event.get("close_time", "")
             if not close_time:
                 continue
-            # close_time is ISO8601: "2026-02-20T20:00:00Z"
             try:
-                close_date_str = close_time[:10]
-                close_date = datetime.date.fromisoformat(close_date_str)
+                # close_time is ISO8601, typically UTC (e.g. "2026-02-20T20:00:00Z")
+                close_dt = datetime.datetime.fromisoformat(close_time.replace("Z", "+00:00"))
+                if close_dt.tzinfo is None:
+                    close_dt = close_dt.replace(tzinfo=datetime.timezone.utc)
+                close_date = close_dt.astimezone(KALSHI_MARKET_TZ).date()
                 if close_date == tomorrow:
                     return event["event_ticker"]
             except (ValueError, KeyError):
