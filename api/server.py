@@ -206,8 +206,13 @@ def _compute_market_data(trade: dict) -> dict:
                         last_price from GET /markets/{ticker} is event-level on
                         Kalshi and bleeds across buckets — do NOT use it.
       - unrealized_pnl: VWAP P&L walking the bid ladder against position size.
+
+    Also backfills temp_low/temp_high/is_open_low/is_open_high into DynamoDB
+    for old trades that were placed before these fields were added.
     """
-    result = {"unrealized_pnl": None, "current_price": None}
+    result = {"unrealized_pnl": None, "current_price": None,
+              "temp_low": trade.get("temp_low"), "temp_high": trade.get("temp_high"),
+              "is_open_low": trade.get("is_open_low"), "is_open_high": trade.get("is_open_high")}
     if _kalshi is None:
         return result
     try:
@@ -215,10 +220,30 @@ def _compute_market_data(trade: dict) -> dict:
         entry_price = trade["price_cents"] / 100.0
         ticker = trade["ticker"]
 
+        # --- Backfill temp bounds for old trades that don't have them ---
+        if trade.get("temp_low") is None and trade.get("temp_high") is None and trade.get("is_open_low") is None:
+            mkt_raw = _kalshi.get_market(ticker)
+            if mkt_raw:
+                tl, th, ol, oh = _kalshi._parse_bounds_from_market(mkt_raw)
+                result["temp_low"]     = tl
+                result["temp_high"]    = th
+                result["is_open_low"]  = ol
+                result["is_open_high"] = oh
+                # Persist so we don't need to re-fetch next poll
+                if _db is not None:
+                    try:
+                        _db.backfill_temp_bounds(
+                            trade_id=trade["trade_id"],
+                            timestamp=trade["timestamp"],
+                            temp_low=tl, temp_high=th,
+                            is_open_low=ol, is_open_high=oh,
+                        )
+                        logger.info("Backfilled temp bounds for %s: low=%s high=%s ol=%s oh=%s",
+                                    ticker, tl, th, ol, oh)
+                    except Exception as e:
+                        logger.warning("Failed to backfill temp bounds for %s: %s", ticker, e)
+
         # --- VWAP P&L from bid ladder (also gives us current_price) ---
-        logger.info("_compute_market_data: ticker=%s temp_low=%s temp_high=%s is_open_low=%s is_open_high=%s",
-                    ticker, trade.get("temp_low"), trade.get("temp_high"),
-                    trade.get("is_open_low"), trade.get("is_open_high"))
         ob = _kalshi.get_orderbook(ticker, depth=20)
         if ob is None:
             return result
@@ -300,6 +325,11 @@ async def get_open_positions():
             mkt = _compute_market_data(trade)
             s["unrealized_pnl"] = mkt["unrealized_pnl"]
             s["current_price"]  = mkt["current_price"]
+            # Override with backfilled bounds if the trade record didn't have them
+            if mkt.get("temp_low")    is not None: s["temp_low"]    = mkt["temp_low"]
+            if mkt.get("temp_high")   is not None: s["temp_high"]   = mkt["temp_high"]
+            if mkt.get("is_open_low") is not None: s["is_open_low"] = mkt["is_open_low"]
+            if mkt.get("is_open_high") is not None: s["is_open_high"] = mkt["is_open_high"]
             city_cfg = CITIES.get(trade["city"])
             s["city_display"] = city_cfg.display_name if city_cfg else trade["city"]
             positions.append(s)

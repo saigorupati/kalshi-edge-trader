@@ -325,6 +325,30 @@ class DynamoClient:
         )
         return trade_id
 
+    def backfill_temp_bounds(
+        self,
+        trade_id: str,
+        timestamp: str,
+        temp_low: Optional[float],
+        temp_high: Optional[float],
+        is_open_low: bool,
+        is_open_high: bool,
+    ) -> None:
+        """Patch temp bucket bounds onto an existing trade record (one-time backfill)."""
+        expr_parts = ["is_open_low = :ol", "is_open_high = :oh"]
+        values: dict = {":ol": is_open_low, ":oh": is_open_high}
+        if temp_low is not None:
+            expr_parts.append("temp_low = :tl")
+            values[":tl"] = _to_decimal(temp_low)
+        if temp_high is not None:
+            expr_parts.append("temp_high = :th")
+            values[":th"] = _to_decimal(temp_high)
+        self._trades.update_item(
+            Key={"trade_id": trade_id, "timestamp": timestamp},
+            UpdateExpression="SET " + ", ".join(expr_parts),
+            ExpressionAttributeValues=values,
+        )
+
     def mark_trade_resolved(
         self,
         trade_id: str,
