@@ -216,6 +216,9 @@ def _compute_market_data(trade: dict) -> dict:
         ticker = trade["ticker"]
 
         # --- VWAP P&L from bid ladder (also gives us current_price) ---
+        logger.info("_compute_market_data: ticker=%s temp_low=%s temp_high=%s is_open_low=%s is_open_high=%s",
+                    ticker, trade.get("temp_low"), trade.get("temp_high"),
+                    trade.get("is_open_low"), trade.get("is_open_high"))
         ob = _kalshi.get_orderbook(ticker, depth=20)
         if ob is None:
             return result
