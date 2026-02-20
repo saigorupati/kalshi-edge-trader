@@ -288,13 +288,25 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
               No open positions
             </div>
           ) : (
-            <table className="data-table">
+            <table className="data-table w-full table-fixed">
+              <colgroup>
+                <col style={{width: '52px'}} />
+                <col />
+                <col style={{width: '42px'}} />
+                <col style={{width: '58px'}} />
+                <col style={{width: '58px'}} />
+                <col style={{width: '62px'}} />
+                <col style={{width: '50px'}} />
+                <col style={{width: '90px'}} />
+                <col style={{width: '62px'}} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th>City</th>
-                  <th>Ticker</th>
+                  <th className="text-left">City</th>
+                  <th className="text-left">Ticker</th>
                   <th className="text-right">Qty</th>
-                  <th className="text-right">Avg$</th>
+                  <th className="text-right">Entry$</th>
+                  <th className="text-right">Mkt$</th>
                   <th className="text-right">Model%</th>
                   <th className="text-right">Edge</th>
                   <th className="text-right">Unreal. P&L</th>
@@ -303,63 +315,56 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
               </thead>
               <tbody>
                 {positions.map((p) => {
-                  const unreal = p.unrealized_pnl ?? null;
+                  const unreal     = p.unrealized_pnl ?? null;
+                  const mktPrice   = p.current_price ?? null;
+                  const entryPrice = p.price_cents / 100;
+                  const mktDiff    = mktPrice !== null ? mktPrice - entryPrice : null;
                   return (
                     <tr key={p.trade_id} className="animate-fade-in">
-                      <td>
+                      <td className="text-left">
                         <span className="badge badge-cyan">{p.city}</span>
                       </td>
-                      <td className="text-text-secondary text-xs max-w-[160px] truncate">
+                      <td className="text-text-secondary text-xs truncate overflow-hidden">
                         {p.ticker}
                       </td>
                       <td className="text-right">{p.count}</td>
-                      <td className="text-right">
-                        ${(p.price_cents / 100).toFixed(2)}
+                      <td className="text-right">${entryPrice.toFixed(2)}</td>
+                      <td className={clsx(
+                        'text-right',
+                        mktDiff === null   ? 'text-text-muted'
+                          : mktDiff > 0   ? 'text-accent-green'
+                          : mktDiff < 0   ? 'text-accent-red'
+                          : 'text-text-primary'
+                      )}>
+                        {mktPrice !== null ? `$${mktPrice.toFixed(2)}` : '—'}
                       </td>
                       <td className="text-right text-accent-purple">
                         {(p.model_prob * 100).toFixed(1)}%
                       </td>
-                      <td
-                        className={clsx(
-                          'text-right',
-                          p.edge >= 0.05
-                            ? 'text-accent-green'
-                            : 'text-accent-yellow'
-                        )}
-                      >
+                      <td className={clsx(
+                        'text-right',
+                        p.edge >= 0.05 ? 'text-accent-green' : 'text-accent-yellow'
+                      )}>
                         {(p.edge * 100).toFixed(1)}%
                       </td>
-                      <td
-                        className={clsx(
-                          'text-right font-semibold',
-                          unreal === null
-                            ? 'text-text-muted'
-                            : unreal >= 0
-                            ? 'text-accent-green'
-                            : 'text-accent-red'
-                        )}
-                      >
+                      <td className={clsx(
+                        'text-right font-semibold',
+                        unreal === null  ? 'text-text-muted'
+                          : unreal >= 0 ? 'text-accent-green'
+                          : 'text-accent-red'
+                      )}>
                         {unreal !== null
                           ? `${unreal >= 0 ? '+' : ''}$${unreal.toFixed(2)}`
                           : '—'}
                       </td>
                       <td className="text-right">
-                        {isPaper ? (
-                          <button
-                            className="btn-red text-[11px]"
-                            onClick={() => { setError(null); setConfirm(p); }}
-                          >
-                            CLOSE
-                          </button>
-                        ) : (
-                          <button
-                            className="btn-red text-[11px]"
-                            disabled={!p.order_id}
-                            onClick={() => { setError(null); setConfirm(p); }}
-                          >
-                            CLOSE
-                          </button>
-                        )}
+                        <button
+                          className="btn-red text-[11px]"
+                          disabled={!isPaper && !p.order_id}
+                          onClick={() => { setError(null); setConfirm(p); }}
+                        >
+                          CLOSE
+                        </button>
                       </td>
                     </tr>
                   );

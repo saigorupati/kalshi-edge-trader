@@ -21,28 +21,11 @@ import threading
 from typing import Any, Dict, List, Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Security
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 
 from config import CITIES, TRADING_MODE, STARTING_BALANCE, MAX_POSITION_PCT_PER_CITY, MAX_OPEN_POSITIONS, DAILY_STOP_LOSS_PCT
-
-# ---------------------------------------------------------------------------
-# API key authentication
-# ---------------------------------------------------------------------------
-_API_KEY = os.getenv("API_SECRET_KEY", "")
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-async def require_api_key(key: Optional[str] = Security(_api_key_header)) -> None:
-    """Dependency — rejects requests that don't carry the correct API key.
-    If API_SECRET_KEY is not set, the check is skipped (local dev convenience).
-    """
-    if not _API_KEY:
-        return  # No key configured — open access (dev/local only)
-    if key != _API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 logger = logging.getLogger(__name__)
 
@@ -165,12 +148,7 @@ def update_scanner_state(
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
-app = FastAPI(
-    title="Kalshi Edge Trader",
-    version="1.0.0",
-    docs_url="/api/docs",
-    dependencies=[Depends(require_api_key)],  # all routes protected
-)
+app = FastAPI(title="Kalshi Edge Trader", version="1.0.0", docs_url="/api/docs")
 
 
 class LimitSellRequest(BaseModel):
@@ -215,43 +193,38 @@ def _serialize_trade(trade: dict) -> dict:
     }
 
 
-def _compute_unrealized_pnl(trade: dict) -> Optional[float]:
+def _compute_market_data(trade: dict) -> dict:
     """
-    Estimate unrealized P&L using a volume-weighted average exit price (VWAP).
+    Fetches live orderbook for a trade and returns:
+      - unrealized_pnl: VWAP-based P&L (walks bid ladder against position size)
+      - current_price:  best YES ask (what the market is currently priced at)
 
-    Walks the bid ladder from best to worst price, filling the position size
-    greedily.  This reflects the actual proceeds you'd receive if you sold
-    all contracts right now into the live order book.
-
-    Example: own 230 contracts, bids are 137@0.25, 143@0.24, 110@0.22
-      → fill 137 @ 0.25, 93 @ 0.24 (230 total filled)
-      → proceeds = 137*0.25 + 93*0.24 = 34.25 + 22.32 = 56.57
-      → VWAP exit = 56.57 / 230 = 0.2460
-      → unrealized P&L = (0.2460 - entry_price) * 230
-
-    Falls back to best_bid mark if the ladder is too thin to fill the full size,
-    using whatever partial fill VWAP is available for the filled portion plus
-    the best_bid as mark for the remainder.
+    Both are returned in one orderbook fetch to avoid double API calls.
+    Returns a dict with None values if the orderbook is unavailable.
     """
+    result = {"unrealized_pnl": None, "current_price": None}
     if _kalshi is None:
-        return None
+        return result
     try:
         count = trade["count"]
         entry_price = trade["price_cents"] / 100.0
 
-        # Fetch enough depth to cover most realistic position sizes
         ob = _kalshi.get_orderbook(trade["ticker"], depth=20)
         if ob is None:
-            return None
+            return result
 
-        # Sort bids descending (best price first)
+        # Current market price = best YES ask
+        best_ask = ob.best_ask()
+        if best_ask is not None:
+            result["current_price"] = round(best_ask, 4)
+
+        # VWAP exit P&L — walk bid ladder
         bids = sorted(ob.yes_bids, key=lambda x: x["price"], reverse=True)
         if not bids:
-            return None
+            return result
 
         remaining = count
         total_proceeds = 0.0
-
         for level in bids:
             if remaining <= 0:
                 break
@@ -260,15 +233,14 @@ def _compute_unrealized_pnl(trade: dict) -> Optional[float]:
             remaining -= fill_qty
 
         if remaining > 0:
-            # Ladder too thin — mark unfilled remainder at best bid
-            best_bid = bids[0]["price"]
-            total_proceeds += remaining * best_bid
+            total_proceeds += remaining * bids[0]["price"]
 
         vwap_exit = total_proceeds / count
-        return round((vwap_exit - entry_price) * count, 4)
+        result["unrealized_pnl"] = round((vwap_exit - entry_price) * count, 4)
+        return result
 
     except Exception:
-        return None
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +284,9 @@ async def get_open_positions():
         positions = []
         for trade in trades:
             s = _serialize_trade(trade)
-            s["unrealized_pnl"] = _compute_unrealized_pnl(trade)
+            mkt = _compute_market_data(trade)
+            s["unrealized_pnl"] = mkt["unrealized_pnl"]
+            s["current_price"]  = mkt["current_price"]
             city_cfg = CITIES.get(trade["city"])
             s["city_display"] = city_cfg.display_name if city_cfg else trade["city"]
             positions.append(s)
@@ -641,16 +615,8 @@ async def _broadcast_live_update():
 
 
 @app.websocket("/ws/live")
-async def websocket_live(websocket: WebSocket, api_key: Optional[str] = None):
-    # Must accept before we can send any close frame
+async def websocket_live(websocket: WebSocket):
     await websocket.accept()
-
-    # Validate API key — reject after accept so the client receives a clean close
-    if _API_KEY and api_key != _API_KEY:
-        logger.warning("WebSocket rejected: invalid API key")
-        await websocket.close(code=4001)
-        return
-
     _ws_clients.append(websocket)
     logger.info("WebSocket client connected. Total: %d", len(_ws_clients))
     try:

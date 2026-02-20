@@ -1,11 +1,9 @@
 /**
  * Typed API client for the Kalshi Edge Trader FastAPI backend.
  * Reads NEXT_PUBLIC_API_URL from env (falls back to '' so Next.js rewrites work in dev).
- * Sends X-API-Key header on every request when NEXT_PUBLIC_API_SECRET_KEY is set.
  */
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
-const API_KEY  = process.env.NEXT_PUBLIC_API_SECRET_KEY ?? '';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -28,6 +26,7 @@ export interface OpenPosition {
   timestamp: string;
   order_id?: string;
   unrealized_pnl?: number;
+  current_price?: number;
   market_yes_bid?: number;
 }
 
@@ -164,13 +163,10 @@ export interface HealthData {
 // ── Fetch helper ─────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (API_KEY) headers['X-API-Key'] = API_KEY;
-  if (options?.headers) {
-    const extra = options.headers as Record<string, string>;
-    Object.assign(headers, extra);
-  }
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...options?.headers as Record<string, string> },
+    ...options,
+  });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`API ${res.status}: ${body || res.statusText}`);

@@ -50,24 +50,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const delayRef          = useRef(reconnectDelayMs);
   const unmountedRef      = useRef(false);
-  const stopRetryRef      = useRef(false); // set true on auth failure (code 4001)
-
   const getWsUrl = useCallback(() => {
     const wsBase = process.env.NEXT_PUBLIC_WS_URL;
-    const apiKey = process.env.NEXT_PUBLIC_API_SECRET_KEY ?? '';
-    const keyParam = apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '';
-    if (wsBase) return `${wsBase}/ws/live${keyParam}`;
+    if (wsBase) return `${wsBase}/ws/live`;
     // In dev: derive from current host
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = process.env.NEXT_PUBLIC_API_URL
       ? new URL(process.env.NEXT_PUBLIC_API_URL).host
       : window.location.host;
-    return `${protocol}//${host}/ws/live${keyParam}`;
+    return `${protocol}//${host}/ws/live`;
   }, []); // no deps — env vars are static at build time
 
   // connect is stable — never recreated after mount
   const connect = useCallback(() => {
-    if (unmountedRef.current || stopRetryRef.current) return;
+    if (unmountedRef.current) return;
 
     const url = getWsUrl();
     setStatus('connecting');
@@ -100,17 +96,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       setStatus('error');
     };
 
-    ws.onclose = (evt) => {
+    ws.onclose = () => {
       if (unmountedRef.current) return;
-
-      // 4001 = invalid API key — stop retrying, no point
-      if (evt.code === 4001) {
-        stopRetryRef.current = true;
-        setStatus('error');
-        console.error('WebSocket auth failed (4001) — check API_SECRET_KEY config');
-        return;
-      }
-
       setStatus('disconnected');
       wsRef.current = null;
 
@@ -123,7 +110,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
   useEffect(() => {
     unmountedRef.current = false;
-    stopRetryRef.current = false;
     connect();
 
     return () => {
