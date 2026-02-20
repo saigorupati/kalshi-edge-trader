@@ -15,6 +15,7 @@ import time
 import uuid
 import logging
 import datetime
+from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -34,7 +35,8 @@ from config import (
 logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 20  # seconds
-MIN_REQUEST_INTERVAL = 0.1  # 100ms between API calls
+MIN_REQUEST_INTERVAL = 0.35  # throttle to reduce public API 429s
+KALSHI_MARKET_TZ = ZoneInfo("America/New_York")
 
 
 @dataclass
@@ -136,11 +138,22 @@ class KalshiClient:
         self._last_request_time = time.time()
 
     def _get(self, path: str, params: Optional[dict] = None) -> dict:
-        self._rate_limit()
         url = self.base_url + path
         headers = {"Content-Type": "application/json"}
         headers.update(self._sign_request("GET", path))
-        resp = requests.get(url, headers=headers, params=params, timeout=REQUEST_TIMEOUT)
+
+        for attempt in range(3):
+            self._rate_limit()
+            resp = requests.get(url, headers=headers, params=params, timeout=REQUEST_TIMEOUT)
+            if resp.status_code != 429:
+                resp.raise_for_status()
+                return resp.json()
+
+            retry_after = resp.headers.get("Retry-After")
+            delay = float(retry_after) if retry_after else (0.5 * (2 ** attempt))
+            logger.warning("Kalshi rate limit hit on %s; retrying in %.1fs", path, delay)
+            time.sleep(delay)
+
         resp.raise_for_status()
         return resp.json()
 
@@ -158,43 +171,65 @@ class KalshiClient:
     # ------------------------------------------------------------------
 
     def get_events_for_series(self, series_ticker: str) -> List[dict]:
-        """GET /events?series_ticker={series}&status=open"""
+        """GET /events?series_ticker={series}. Try open first, then all."""
         try:
             data = self._get("/events", params={"series_ticker": series_ticker, "status": "open"})
+            events = data.get("events", [])
+            if events:
+                return events
+
+            data = self._get("/events", params={"series_ticker": series_ticker, "status": "all"})
             return data.get("events", [])
         except Exception as e:
             logger.error("Failed to get events for series %s: %s", series_ticker, e)
             return []
 
+    def _format_event_ticker_for_date(self, series_ticker: str, date_value: datetime.date) -> str:
+        """Construct canonical Kalshi event ticker suffix YYMONDD, e.g. KXHIGHNY-26FEB20."""
+        return f"{series_ticker}-{date_value.strftime('%y%b%d').upper()}"
+
     def get_tomorrow_event_ticker(self, series_ticker: str) -> Optional[str]:
         """
         Finds the event ticker for tomorrow's date in a given series.
-        Kalshi event tickers include the date in their close_time field.
+        Uses Kalshi market timezone (America/New_York) so deployments running in UTC
+        still target the correct "tomorrow" market from a US trading perspective.
         """
-        tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+        now_market_tz = datetime.datetime.now(tz=KALSHI_MARKET_TZ)
+        tomorrow = now_market_tz.date() + datetime.timedelta(days=1)
         events = self.get_events_for_series(series_ticker)
 
         for event in events:
             close_time = event.get("close_time", "")
             if not close_time:
                 continue
-            # close_time is ISO8601: "2026-02-20T20:00:00Z"
             try:
-                close_date_str = close_time[:10]
-                close_date = datetime.date.fromisoformat(close_date_str)
+                # close_time is ISO8601, typically UTC (e.g. "2026-02-20T20:00:00Z")
+                close_dt = datetime.datetime.fromisoformat(close_time.replace("Z", "+00:00"))
+                if close_dt.tzinfo is None:
+                    close_dt = close_dt.replace(tzinfo=datetime.timezone.utc)
+                close_date = close_dt.astimezone(KALSHI_MARKET_TZ).date()
                 if close_date == tomorrow:
                     return event["event_ticker"]
             except (ValueError, KeyError):
                 continue
 
-        logger.warning("No tomorrow event found for series %s", series_ticker)
-        return None
+        fallback_ticker = self._format_event_ticker_for_date(series_ticker, tomorrow)
+        logger.warning(
+            "No tomorrow event found for series %s via /events; falling back to inferred ticker %s",
+            series_ticker,
+            fallback_ticker,
+        )
+        return fallback_ticker
 
     def get_markets_for_event(self, event_ticker: str) -> List[KalshiMarket]:
-        """GET /markets?event_ticker={ticker}&status=open"""
+        """GET /markets?event_ticker={ticker}. Try open first, then all."""
+        markets: List[dict] = []
         try:
             data = self._get("/markets", params={"event_ticker": event_ticker, "status": "open"})
             markets = data.get("markets", [])
+            if not markets:
+                data = self._get("/markets", params={"event_ticker": event_ticker, "status": "all"})
+                markets = data.get("markets", [])
         except Exception as e:
             logger.error("Failed to get markets for event %s: %s", event_ticker, e)
             return []
@@ -207,6 +242,10 @@ class KalshiClient:
                 subtitle = m.get("yes_sub_title", m.get("subtitle", ""))
                 temp_low, temp_high, is_open_low, is_open_high = self._parse_temp_range(subtitle)
 
+                market_status = (m.get("status", "").lower() or "open")
+                if market_status not in {"open", "active"}:
+                    continue
+
                 result.append(KalshiMarket(
                     ticker=m["ticker"],
                     event_ticker=event_ticker,
@@ -217,7 +256,65 @@ class KalshiClient:
                     temp_high=temp_high,
                     is_open_low=is_open_low,
                     is_open_high=is_open_high,
-                    status=m.get("status", "open"),
+                    status=market_status,
+                    volume=int(m.get("volume", 0)),
+                ))
+            except Exception as e:
+                logger.debug("Skipping market %s: %s", m.get("ticker", "?"), e)
+                continue
+
+        return result
+
+    def get_markets_for_series_tomorrow(self, series_ticker: str) -> List[KalshiMarket]:
+        """GET /markets by series, then select tomorrow's event ticker in ET."""
+        now_market_tz = datetime.datetime.now(tz=KALSHI_MARKET_TZ)
+        tomorrow = now_market_tz.date() + datetime.timedelta(days=1)
+        target_event_ticker = self._format_event_ticker_for_date(series_ticker, tomorrow)
+
+        markets: List[dict] = []
+        try:
+            data = self._get("/markets", params={"series_ticker": series_ticker, "status": "open"})
+            markets = data.get("markets", [])
+            if not markets:
+                data = self._get("/markets", params={"series_ticker": series_ticker, "status": "all"})
+                markets = data.get("markets", [])
+        except Exception as e:
+            logger.error("Failed to get markets for series %s: %s", series_ticker, e)
+            return []
+
+        filtered = []
+        target_event_ticker_lower = target_event_ticker.lower()
+        for m in markets:
+            event_ticker = str(m.get("event_ticker", ""))
+            if event_ticker.lower() != target_event_ticker_lower:
+                continue
+            market_status = (m.get("status", "").lower() or "open")
+            if market_status not in {"open", "active"}:
+                continue
+            filtered.append(m)
+
+        if not filtered:
+            return []
+
+        result = []
+        for m in filtered:
+            try:
+                yes_ask = self._parse_price(m.get("yes_ask") or m.get("yes_ask_price") or 0)
+                yes_bid = self._parse_price(m.get("yes_bid") or m.get("yes_bid_price") or 0)
+                subtitle = m.get("yes_sub_title", m.get("subtitle", ""))
+                temp_low, temp_high, is_open_low, is_open_high = self._parse_temp_range(subtitle)
+
+                result.append(KalshiMarket(
+                    ticker=m["ticker"],
+                    event_ticker=str(m.get("event_ticker", target_event_ticker)),
+                    yes_ask=yes_ask,
+                    yes_bid=yes_bid,
+                    yes_sub_title=subtitle,
+                    temp_low=temp_low,
+                    temp_high=temp_high,
+                    is_open_low=is_open_low,
+                    is_open_high=is_open_high,
+                    status=(m.get("status", "").lower() or "open"),
                     volume=int(m.get("volume", 0)),
                 ))
             except Exception as e:
@@ -471,9 +568,13 @@ class KalshiClient:
 
     def get_city_markets(self, series_ticker: str) -> List[KalshiMarket]:
         """
-        End-to-end: find tomorrow's event for a series and return all open markets.
-        Returns empty list if no tomorrow event found.
+        End-to-end market discovery for tomorrow in ET.
+        Prefer direct series->markets lookup (fewer API calls), then fallback to event lookup.
         """
+        markets = self.get_markets_for_series_tomorrow(series_ticker)
+        if markets:
+            return markets
+
         event_ticker = self.get_tomorrow_event_ticker(series_ticker)
         if event_ticker is None:
             return []
