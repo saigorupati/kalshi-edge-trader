@@ -41,6 +41,7 @@ _scanner_state: Dict[str, Any] = {
     "cycle_number": 0,
     "opportunities": {},
     "dist_by_city": {},
+    "bracket_opportunities": {},
 }
 
 _ws_clients: List[WebSocket] = []
@@ -60,10 +61,11 @@ def update_scanner_state(
     opportunities_by_city: dict,
     dist_by_city: dict,
     cycle_number: int,
+    bracket_opportunities_by_city: Optional[dict] = None,
 ) -> None:
     """
     Called by main.py's trading_cycle() at the end of each cycle.
-    Serializes TradeOpportunity and TempDistribution objects to dicts.
+    Serializes TradeOpportunity, BracketOpportunity and TempDistribution objects to dicts.
     Also broadcasts to all connected WebSocket clients.
     """
     global _scanner_state
@@ -101,11 +103,40 @@ def update_scanner_state(
             "valid_date": dist.valid_date,
         }
 
+    brackets_serialized = {}
+    for city_code, brackets in (bracket_opportunities_by_city or {}).items():
+        brackets_serialized[city_code] = [
+            {
+                "leg1_ticker":      b.legs[0].market.ticker,
+                "leg1_range":       b.legs[0].market.yes_sub_title,
+                "leg1_temp_low":    b.legs[0].market.temp_low,
+                "leg1_temp_high":   b.legs[0].market.temp_high,
+                "leg1_ask":         round(b.legs[0].ask_price, 4),
+                "leg1_model_prob":  round(b.legs[0].model_prob, 4),
+                "leg1_net_edge":    round(b.legs[0].net_edge, 4),
+                "leg2_ticker":      b.legs[1].market.ticker,
+                "leg2_range":       b.legs[1].market.yes_sub_title,
+                "leg2_temp_low":    b.legs[1].market.temp_low,
+                "leg2_temp_high":   b.legs[1].market.temp_high,
+                "leg2_ask":         round(b.legs[1].ask_price, 4),
+                "leg2_model_prob":  round(b.legs[1].model_prob, 4),
+                "leg2_net_edge":    round(b.legs[1].net_edge, 4),
+                "combined_model_prob": round(b.combined_model_prob, 4),
+                "total_ask":        round(b.total_ask, 4),
+                "profit_if_hit":    round(b.profit_if_hit, 4),
+                "total_net_edge":   round(b.total_net_edge, 4),
+                "expected_value":   round(b.expected_value, 4),
+                "has_edge":         b.has_edge,
+            }
+            for b in brackets
+        ]
+
     _scanner_state = {
         "last_updated": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "cycle_number": cycle_number,
         "opportunities": opps_serialized,
         "dist_by_city": dists_serialized,
+        "bracket_opportunities": brackets_serialized,
     }
 
     # Push to WebSocket clients if event loop is running

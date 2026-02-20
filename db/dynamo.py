@@ -294,11 +294,16 @@ class DynamoClient:
             "dollar_risk": _to_decimal(trade["dollar_risk"]),
             "mode": trade["mode"],
             "order_id": trade.get("order_id", ""),
+            "strategy": trade.get("strategy", "single"),   # "single" or "bracket"
             "resolved": False,
             "resolved_yes": None,
             "pnl": None,
             "ttl": _ttl_epoch(TRADES_TTL_DAYS),
         }
+        # bracket_id is only set for bracket legs; omit the attribute entirely for singles
+        # (DynamoDB is schemaless — absent field == None when read back)
+        if trade.get("bracket_id") is not None:
+            item["bracket_id"] = trade["bracket_id"]
         self._trades.put_item(Item=item)
         logger.info(
             "Logged trade %s | %s | %s | count=%d | price=%d¢ | edge=%.1f%%",
@@ -379,6 +384,8 @@ class DynamoClient:
                     "resolved": item.get("resolved", False),
                     "resolved_yes": item.get("resolved_yes"),
                     "pnl": _from_decimal(item.get("pnl")),
+                    "strategy": item.get("strategy", "single"),
+                    "bracket_id": item.get("bracket_id"),
                 }
             )
         return result

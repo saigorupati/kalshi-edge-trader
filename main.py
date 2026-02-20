@@ -43,7 +43,7 @@ from models.calibration import (
     store_forecast_calibration,
     fill_actual_highs,
 )
-from trading.edge import find_opportunities, filter_viable_opportunities
+from trading.edge import find_opportunities, filter_viable_opportunities, find_bracket_opportunities
 from trading.executor import TradeExecutor
 from trading.risk import RiskManager
 from portfolio.tracker import PortfolioTracker
@@ -118,6 +118,7 @@ def trading_cycle() -> None:
     # --- Process each city ---
     dist_by_city = {}
     opps_by_city = {}
+    bracket_opps_by_city: Dict[str, list] = {}
     executed_by_city: Dict[str, list] = {}
 
     for city_code, city_cfg in CITIES.items():
@@ -161,20 +162,25 @@ def trading_cycle() -> None:
         viable = filter_viable_opportunities(all_opps)
         opps_by_city[city_code] = all_opps  # store all for dashboard
 
-        if not viable:
-            logger.info("%s: No viable opportunities (edge threshold not met)", city_code)
+        # Find bracket opportunities from all evaluated opps (not just viable)
+        bracket_opps = find_bracket_opportunities(dist, all_opps, city_code)
+        bracket_opps_by_city[city_code] = bracket_opps
+
+        if not viable and not bracket_opps:
+            logger.info("%s: No viable opportunities (single or bracket)", city_code)
             continue
 
-        logger.info(
-            "%s: %d viable opportunities | best=%.1f%% on %s",
-            city_code,
-            len(viable),
-            viable[0].net_edge * 100,
-            viable[0].market.ticker,
-        )
+        if viable:
+            logger.info(
+                "%s: %d viable single opportunities | best=%.1f%% on %s",
+                city_code,
+                len(viable),
+                viable[0].net_edge * 100,
+                viable[0].market.ticker,
+            )
 
-        # Execute the best opportunity
-        executed = _executor.execute_city_opportunities(city_code, viable)
+        # Execute using both strategies
+        executed = _executor.execute_city_with_bracket(city_code, viable, bracket_opps)
         executed_by_city[city_code] = executed
 
     # --- Dashboard output ---
@@ -192,7 +198,7 @@ def trading_cycle() -> None:
 
     # --- Push scanner results to API server (WebSocket broadcast) ---
     try:
-        update_scanner_state(opps_by_city, dist_by_city, _cycle_count)
+        update_scanner_state(opps_by_city, dist_by_city, _cycle_count, bracket_opps_by_city)
     except Exception as e:
         logger.error("Failed to update scanner state: %s", e)
 

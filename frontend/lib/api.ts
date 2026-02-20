@@ -120,10 +120,35 @@ export interface Opportunity {
   sigma: number;
 }
 
+export interface BracketOpportunity {
+  city: string;
+  leg1_ticker: string;
+  leg1_range: string;
+  leg1_temp_low?: number;
+  leg1_temp_high?: number;
+  leg1_ask: number;
+  leg1_model_prob: number;
+  leg1_net_edge: number;
+  leg2_ticker: string;
+  leg2_range: string;
+  leg2_temp_low?: number;
+  leg2_temp_high?: number;
+  leg2_ask: number;
+  leg2_model_prob: number;
+  leg2_net_edge: number;
+  combined_model_prob: number;
+  total_ask: number;
+  profit_if_hit: number;
+  total_net_edge: number;
+  expected_value: number;
+  has_edge: boolean;
+}
+
 export interface ScannerState {
   cycle_number: number;
   last_updated: string;
   opportunities: Opportunity[];
+  bracket_opportunities: BracketOpportunity[];
   city_distributions: Record<string, { mu: number; sigma: number; bias_correction: number }>;
 }
 
@@ -171,7 +196,7 @@ async function fetchPnlHistory(): Promise<PnLRecord[]> {
   return res.history ?? [];
 }
 
-// Scanner: server returns opportunities as dict-by-city, flatten to array
+// Scanner: server returns opportunities as dict-by-city, flatten to arrays
 async function fetchScanner(): Promise<ScannerState> {
   const raw = await apiFetch<{
     last_updated: string | null;
@@ -188,6 +213,28 @@ async function fetchScanner(): Promise<ScannerState> {
       has_edge: boolean;
     }>>;
     dist_by_city: Record<string, { mu: number; sigma: number; bias_applied: number }>;
+    bracket_opportunities?: Record<string, Array<{
+      leg1_ticker: string;
+      leg1_range: string;
+      leg1_temp_low?: number;
+      leg1_temp_high?: number;
+      leg1_ask: number;
+      leg1_model_prob: number;
+      leg1_net_edge: number;
+      leg2_ticker: string;
+      leg2_range: string;
+      leg2_temp_low?: number;
+      leg2_temp_high?: number;
+      leg2_ask: number;
+      leg2_model_prob: number;
+      leg2_net_edge: number;
+      combined_model_prob: number;
+      total_ask: number;
+      profit_if_hit: number;
+      total_net_edge: number;
+      expected_value: number;
+      has_edge: boolean;
+    }>>;
   }>('/api/scanner');
 
   // Flatten dict-by-city into a sorted array of Opportunity
@@ -211,6 +258,15 @@ async function fetchScanner(): Promise<ScannerState> {
   }
   opps.sort((a, b) => b.net_edge - a.net_edge);
 
+  // Flatten bracket opportunities dict-by-city into sorted array
+  const brackets: BracketOpportunity[] = [];
+  for (const [city, cityBrackets] of Object.entries(raw.bracket_opportunities ?? {})) {
+    for (const b of cityBrackets) {
+      brackets.push({ city, ...b });
+    }
+  }
+  brackets.sort((a, b) => b.expected_value - a.expected_value);
+
   // Normalise city_distributions shape
   const dists: ScannerState['city_distributions'] = {};
   for (const [city, d] of Object.entries(raw.dist_by_city ?? {})) {
@@ -218,10 +274,11 @@ async function fetchScanner(): Promise<ScannerState> {
   }
 
   return {
-    cycle_number:       raw.cycle_number ?? 0,
-    last_updated:       raw.last_updated ?? new Date().toISOString(),
-    opportunities:      opps,
-    city_distributions: dists,
+    cycle_number:          raw.cycle_number ?? 0,
+    last_updated:          raw.last_updated ?? new Date().toISOString(),
+    opportunities:         opps,
+    bracket_opportunities: brackets,
+    city_distributions:    dists,
   };
 }
 

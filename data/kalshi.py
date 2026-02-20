@@ -420,19 +420,30 @@ class KalshiClient:
         strike = raw.get("floor_strike")
         strike_type = (raw.get("strike_type") or "").lower()
 
+        # Note: Kalshi sometimes returns floor_strike=null for the open-low "less"
+        # market (e.g. KXHIGHTPHX-26FEB20-T61 subtitle="60° or below" has
+        # floor_strike=None).  Only use strike fields when both are present.
         if strike is not None and strike_type:
             s = float(strike)
             if strike_type == "greater":
                 # YES resolves if temp > strike, i.e. temp >= strike + 1
                 return s + 1.0, None, False, True
+            if strike_type == "between":
+                # floor_strike is the lower bound; ceil_strike (if present) is upper
+                ceil_strike = raw.get("ceil_strike")
+                if ceil_strike is not None:
+                    return s, float(ceil_strike), False, False
+                # Fallback: derive upper bound from subtitle
+                subtitle = raw.get("yes_sub_title") or raw.get("subtitle") or ""
+                _, temp_high, _, _ = self._parse_temp_range(subtitle)
+                return s, temp_high, False, False
             if strike_type == "less":
                 # YES resolves if temp < strike, i.e. temp <= strike - 1
                 return None, s - 1.0, True, False
-            if strike_type == "between":
-                ceil_strike = raw.get("ceil_strike") or raw.get("floor_strike")
-                return s, float(ceil_strike), False, False
 
-        # Fallback: parse yes_sub_title / subtitle text
+        # Fallback: parse yes_sub_title / subtitle text.
+        # Covers the open-low "less" case where floor_strike is null,
+        # and any future market types not handled above.
         subtitle = raw.get("yes_sub_title") or raw.get("subtitle") or ""
         return self._parse_temp_range(subtitle)
 

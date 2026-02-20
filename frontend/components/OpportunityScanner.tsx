@@ -1,6 +1,7 @@
 'use client';
 
-import { ScannerState, Opportunity } from '@/lib/api';
+import { useState } from 'react';
+import { ScannerState, Opportunity, BracketOpportunity } from '@/lib/api';
 import { clsx } from 'clsx';
 
 interface Props {
@@ -38,8 +39,13 @@ function formatRange(opp: Opportunity): string {
 }
 
 export default function OpportunityScanner({ scanner, wsConnected }: Props) {
+  const [bracketExpanded, setBracketExpanded] = useState(true);
+
   const opps: Opportunity[] = [...(scanner?.opportunities ?? [])].sort(
     (a, b) => b.net_edge - a.net_edge
+  );
+  const brackets: BracketOpportunity[] = [...(scanner?.bracket_opportunities ?? [])].sort(
+    (a, b) => b.expected_value - a.expected_value
   );
 
   return (
@@ -67,61 +73,150 @@ export default function OpportunityScanner({ scanner, wsConnected }: Props) {
             <div className="dot-yellow w-3 h-3" />
             Waiting for first cycle…
           </div>
-        ) : opps.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-text-muted text-sm font-mono">
-            No edges found this cycle
-          </div>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>City</th>
-                <th>Range</th>
-                <th className="text-right">μ / σ</th>
-                <th className="text-right">Model%</th>
-                <th className="text-right">Ask%</th>
-                <th>Net Edge</th>
-              </tr>
-            </thead>
-            <tbody>
-              {opps.map((opp, i) => (
-                <tr
-                  key={`${opp.city}-${opp.ticker}-${i}`}
-                  className={clsx(
-                    'animate-fade-in',
-                    opp.net_edge >= 0.10 && 'bg-green-950/10'
+          <>
+            {/* ── Single-bin table ── */}
+            {opps.length === 0 ? (
+              <div className="flex items-center justify-center h-24 text-text-muted text-sm font-mono">
+                No single-bin edges found this cycle
+              </div>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>City</th>
+                    <th>Range</th>
+                    <th className="text-right">μ / σ</th>
+                    <th className="text-right">Model%</th>
+                    <th className="text-right">Ask%</th>
+                    <th>Net Edge</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {opps.map((opp, i) => (
+                    <tr
+                      key={`${opp.city}-${opp.ticker}-${i}`}
+                      className={clsx(
+                        'animate-fade-in',
+                        opp.net_edge >= 0.10 && 'bg-green-950/10'
+                      )}
+                    >
+                      <td className="text-text-muted text-xs">{i + 1}</td>
+                      <td>
+                        <span className="badge badge-cyan">{opp.city}</span>
+                      </td>
+                      <td className="font-mono text-xs text-text-secondary">
+                        {formatRange(opp)}
+                      </td>
+                      <td className="text-right font-mono text-xs text-text-secondary">
+                        {opp.mu.toFixed(1)} / ±{opp.sigma.toFixed(1)}
+                      </td>
+                      <td className="text-right font-mono text-accent-purple">
+                        {(opp.model_prob * 100).toFixed(1)}%
+                      </td>
+                      <td className="text-right font-mono text-text-secondary">
+                        {(opp.ask * 100).toFixed(1)}%
+                      </td>
+                      <td>
+                        <EdgeBar edge={opp.net_edge} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {/* ── Bracket opportunities panel ── */}
+            <div className="border-t border-bg-border mt-1">
+              <button
+                onClick={() => setBracketExpanded(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-2 text-xs font-mono text-text-secondary hover:text-text-primary transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    className={clsx(
+                      'inline-block transition-transform duration-200',
+                      bracketExpanded ? 'rotate-90' : 'rotate-0'
+                    )}
+                  >
+                    ▶
+                  </span>
+                  <span className="text-accent-orange font-semibold">Bracket Opportunities</span>
+                  {brackets.length > 0 && (
+                    <span className="badge badge-cyan">{brackets.length}</span>
                   )}
-                >
-                  <td className="text-text-muted text-xs">{i + 1}</td>
-                  <td>
-                    <span className="badge badge-cyan">{opp.city}</span>
-                  </td>
-                  <td className="font-mono text-xs text-text-secondary">
-                    {formatRange(opp)}
-                  </td>
-                  <td className="text-right font-mono text-xs text-text-secondary">
-                    {opp.mu.toFixed(1)} / ±{opp.sigma.toFixed(1)}
-                  </td>
-                  <td className="text-right font-mono text-accent-purple">
-                    {(opp.model_prob * 100).toFixed(1)}%
-                  </td>
-                  <td className="text-right font-mono text-text-secondary">
-                    {(opp.ask * 100).toFixed(1)}%
-                  </td>
-                  <td>
-                    <EdgeBar edge={opp.net_edge} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </span>
+                <span className="text-text-muted">2-bin straddle · buys both legs</span>
+              </button>
+
+              {bracketExpanded && (
+                brackets.length === 0 ? (
+                  <div className="flex items-center justify-center h-16 text-text-muted text-xs font-mono px-4">
+                    No bracket edges this cycle — need 2 adjacent bins each with &gt;5% edge + combined &gt;10%
+                  </div>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>City</th>
+                        <th>Leg 1</th>
+                        <th className="text-right">Ask₁</th>
+                        <th>Leg 2</th>
+                        <th className="text-right">Ask₂</th>
+                        <th className="text-right">Combined%</th>
+                        <th className="text-right">Total Cost</th>
+                        <th>EV</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {brackets.map((b, i) => (
+                        <tr
+                          key={`bracket-${b.city}-${b.leg1_ticker}-${i}`}
+                          className="animate-fade-in bg-orange-950/10"
+                        >
+                          <td>
+                            <span className="badge badge-cyan">{b.city}</span>
+                          </td>
+                          <td className="font-mono text-xs text-text-secondary">
+                            {b.leg1_temp_low != null && b.leg1_temp_high != null
+                              ? `${b.leg1_temp_low}–${b.leg1_temp_high}°F`
+                              : b.leg1_range}
+                          </td>
+                          <td className="text-right font-mono text-xs text-text-secondary">
+                            {(b.leg1_ask * 100).toFixed(1)}¢
+                          </td>
+                          <td className="font-mono text-xs text-text-secondary">
+                            {b.leg2_temp_low != null && b.leg2_temp_high != null
+                              ? `${b.leg2_temp_low}–${b.leg2_temp_high}°F`
+                              : b.leg2_range}
+                          </td>
+                          <td className="text-right font-mono text-xs text-text-secondary">
+                            {(b.leg2_ask * 100).toFixed(1)}¢
+                          </td>
+                          <td className="text-right font-mono text-accent-purple">
+                            {(b.combined_model_prob * 100).toFixed(1)}%
+                          </td>
+                          <td className="text-right font-mono text-text-secondary">
+                            {(b.total_ask * 100).toFixed(1)}¢
+                          </td>
+                          <td>
+                            <EdgeBar edge={b.expected_value} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              )}
+            </div>
+          </>
         )}
       </div>
 
       {scanner && (
         <div className="px-4 py-2 border-t border-bg-border flex justify-between text-xs text-text-muted font-mono">
-          <span>{opps.length} opportunities found</span>
+          <span>{opps.length} single · {brackets.length} bracket</span>
           <span>Cycle #{scanner.cycle_number} · {new Date(scanner.last_updated).toLocaleTimeString()}</span>
         </div>
       )}

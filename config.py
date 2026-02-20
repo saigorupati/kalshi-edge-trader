@@ -102,19 +102,17 @@ CITIES: Dict[str, CityConfig] = {
         nws_grid_x=74,
         nws_grid_y=74,
     ),
-    # SF disabled: KXHIGHSF series does not exist on Kalshi (returns empty / 400).
-    # Re-enable if Kalshi adds a San Francisco high temperature market.
-    # "SF": CityConfig(
-    #     name="SF",
-    #     display_name="San Francisco",
-    #     lat=37.7749,
-    #     lon=-122.4194,
-    #     nbm_station="KSFO",
-    #     kalshi_series="KXHIGHSF",
-    #     nws_office="MTR",
-    #     nws_grid_x=92,
-    #     nws_grid_y=88,
-    # ),
+    "PHX": CityConfig(
+        name="PHX",
+        display_name="Phoenix",
+        lat=33.4484,
+        lon=-112.0740,
+        nbm_station="KPHX",
+        kalshi_series="KXHIGHTPHX",
+        nws_office="PSR",
+        nws_grid_x=159,
+        nws_grid_y=58,
+    ),
 }
 
 # ---------------------------------------------------------------------------
