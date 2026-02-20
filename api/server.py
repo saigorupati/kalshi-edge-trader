@@ -213,10 +213,10 @@ def _compute_market_data(trade: dict) -> dict:
         if ob is None:
             return result
 
-        # Current market price = best YES ask
-        best_ask = ob.best_ask()
-        if best_ask is not None:
-            result["current_price"] = round(best_ask, 4)
+        # Current highest bid = best YES bid (what buyers are paying right now)
+        best_bid_price = ob.best_bid()
+        if best_bid_price is not None:
+            result["current_price"] = round(best_bid_price, 4)
 
         # VWAP exit P&L — walk bid ladder
         bids = sorted(ob.yes_bids, key=lambda x: x["price"], reverse=True)

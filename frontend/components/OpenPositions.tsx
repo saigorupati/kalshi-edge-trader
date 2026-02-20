@@ -288,29 +288,18 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
               No open positions
             </div>
           ) : (
-            <table className="data-table w-full table-fixed">
-              <colgroup>
-                <col style={{width: '52px'}} />
-                <col />
-                <col style={{width: '42px'}} />
-                <col style={{width: '58px'}} />
-                <col style={{width: '58px'}} />
-                <col style={{width: '62px'}} />
-                <col style={{width: '50px'}} />
-                <col style={{width: '90px'}} />
-                <col style={{width: '62px'}} />
-              </colgroup>
+            <table className="data-table w-full">
               <thead>
                 <tr>
-                  <th className="text-left">City</th>
-                  <th className="text-left">Ticker</th>
-                  <th className="text-right">Qty</th>
-                  <th className="text-right">Entry$</th>
-                  <th className="text-right">Mkt$</th>
-                  <th className="text-right">Model%</th>
-                  <th className="text-right">Edge</th>
-                  <th className="text-right">Unreal. P&L</th>
-                  <th className="text-right">Action</th>
+                  <th style={{width:'52px'}}>City</th>
+                  <th>Ticker</th>
+                  <th style={{width:'44px'}} className="!text-right">Qty</th>
+                  <th style={{width:'60px'}} className="!text-right">Entry$</th>
+                  <th style={{width:'60px'}} className="!text-right">Bid$</th>
+                  <th style={{width:'64px'}} className="!text-right">Model%</th>
+                  <th style={{width:'50px'}} className="!text-right">Edge</th>
+                  <th style={{width:'96px'}} className="!text-right">Unreal. P&L</th>
+                  <th style={{width:'62px'}} className="!text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -321,19 +310,19 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
                   const mktDiff    = mktPrice !== null ? mktPrice - entryPrice : null;
                   return (
                     <tr key={p.trade_id} className="animate-fade-in">
-                      <td className="text-left">
+                      <td>
                         <span className="badge badge-cyan">{p.city}</span>
                       </td>
-                      <td className="text-text-secondary text-xs truncate overflow-hidden">
+                      <td className="text-text-secondary text-xs" style={{maxWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                         {p.ticker}
                       </td>
                       <td className="text-right">{p.count}</td>
                       <td className="text-right">${entryPrice.toFixed(2)}</td>
                       <td className={clsx(
                         'text-right',
-                        mktDiff === null   ? 'text-text-muted'
-                          : mktDiff > 0   ? 'text-accent-green'
-                          : mktDiff < 0   ? 'text-accent-red'
+                        mktDiff === null ? 'text-text-muted'
+                          : mktDiff > 0 ? 'text-accent-green'
+                          : mktDiff < 0 ? 'text-accent-red'
                           : 'text-text-primary'
                       )}>
                         {mktPrice !== null ? `$${mktPrice.toFixed(2)}` : '—'}
