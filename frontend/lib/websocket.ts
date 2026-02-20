@@ -26,6 +26,10 @@ interface UseWebSocketOptions {
  * Auto-reconnecting WebSocket hook.
  * Connects to /ws/live on the FastAPI backend.
  * Uses exponential backoff capped at maxReconnectDelay.
+ *
+ * Stability: all mutable state accessed inside the socket callbacks is stored
+ * in refs so the `connect` function never needs to be recreated — this prevents
+ * the useEffect dependency loop that caused continuous reconnects.
  */
 export function useWebSocket(options: UseWebSocketOptions = {}) {
   const {
@@ -38,26 +42,32 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [lastMessage, setLastMessage] = useState<LiveUpdate | null>(null);
   const [lastHeartbeat, setLastHeartbeat] = useState<Date | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  // Keep latest onMessage callback in a ref so connect() never needs to change
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
+
+  const wsRef             = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const delayRef = useRef(reconnectDelayMs);
-  const unmountedRef = useRef(false);
+  const delayRef          = useRef(reconnectDelayMs);
+  const unmountedRef      = useRef(false);
+  const stopRetryRef      = useRef(false); // set true on auth failure (code 4001)
 
   const getWsUrl = useCallback(() => {
     const wsBase = process.env.NEXT_PUBLIC_WS_URL;
     const apiKey = process.env.NEXT_PUBLIC_API_SECRET_KEY ?? '';
     const keyParam = apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '';
     if (wsBase) return `${wsBase}/ws/live${keyParam}`;
-    // In dev use current host but swap protocol
+    // In dev: derive from current host
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = process.env.NEXT_PUBLIC_API_URL
       ? new URL(process.env.NEXT_PUBLIC_API_URL).host
       : window.location.host;
     return `${protocol}//${host}/ws/live${keyParam}`;
-  }, []);
+  }, []); // no deps — env vars are static at build time
 
+  // connect is stable — never recreated after mount
   const connect = useCallback(() => {
-    if (unmountedRef.current) return;
+    if (unmountedRef.current || stopRetryRef.current) return;
 
     const url = getWsUrl();
     setStatus('connecting');
@@ -68,7 +78,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     ws.onopen = () => {
       if (unmountedRef.current) { ws.close(); return; }
       setStatus('connected');
-      delayRef.current = reconnectDelayMs; // reset backoff on success
+      delayRef.current = reconnectDelayMs; // reset backoff
     };
 
     ws.onmessage = (evt) => {
@@ -79,7 +89,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         if (data.type === 'heartbeat') {
           setLastHeartbeat(new Date(data.timestamp));
         }
-        onMessage?.(data);
+        onMessageRef.current?.(data);
       } catch {
         // malformed message — ignore
       }
@@ -90,8 +100,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       setStatus('error');
     };
 
-    ws.onclose = () => {
+    ws.onclose = (evt) => {
       if (unmountedRef.current) return;
+
+      // 4001 = invalid API key — stop retrying, no point
+      if (evt.code === 4001) {
+        stopRetryRef.current = true;
+        setStatus('error');
+        console.error('WebSocket auth failed (4001) — check API_SECRET_KEY config');
+        return;
+      }
+
       setStatus('disconnected');
       wsRef.current = null;
 
@@ -100,10 +119,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       delayRef.current = Math.min(delayRef.current * 1.5, maxReconnectDelay);
       reconnectTimerRef.current = setTimeout(connect, delay);
     };
-  }, [getWsUrl, onMessage, reconnectDelayMs, maxReconnectDelay]);
+  }, [getWsUrl, reconnectDelayMs, maxReconnectDelay]); // onMessage intentionally excluded — use ref
 
   useEffect(() => {
     unmountedRef.current = false;
+    stopRetryRef.current = false;
     connect();
 
     return () => {
@@ -111,7 +131,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       wsRef.current?.close();
     };
-  }, [connect]);
+  }, []); // empty deps — connect once on mount, cleanup on unmount
 
   const disconnect = useCallback(() => {
     unmountedRef.current = true;
