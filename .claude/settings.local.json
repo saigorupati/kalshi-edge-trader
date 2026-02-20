@@ -16,7 +16,9 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\saini\\\\Projects\\\\kalshi-edge-trader\" -Recurse -File)",
       "Bash(Where-Object { $_FullName -notmatch '\\\\.idea|__pycache__|\\\\.git' })",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "Bash(Sort-Object:*)"
+      "Bash(Sort-Object:*)",
+      "Bash(curl:*)",
+      "Bash(.venv/Scripts/python:*)"
     ]
   }
 }

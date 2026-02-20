@@ -97,7 +97,9 @@ def fetch_nbm_bulletin(date_str: str, cycle: str) -> str:
     resp = requests.get(url, timeout=REQUEST_TIMEOUT, stream=True)
     resp.raise_for_status()
 
-    text = resp.text
+    # Normalize line endings — the NOMADS server returns CRLF (\r\n) which
+    # breaks re.MULTILINE's $ anchor since \r is not whitespace in the regex.
+    text = resp.text.replace("\r\n", "\n").replace("\r", "\n")
     logger.info("NBM bulletin downloaded: %.1f MB", len(text) / 1_048_576)
     _bulletin_cache[cache_key] = text
     return text
@@ -114,21 +116,55 @@ def clear_bulletin_cache() -> None:
 def extract_station_block(bulletin_text: str, station: str) -> Optional[str]:
     """
     Extracts the text block for one station from the full NBP bulletin.
-    Each block starts with a line like: "KLAX   NBP  19 Feb 2026  19Z"
-    and ends at the next station block or end-of-file.
+
+    NBM V4.3 bulletin header format (note leading space):
+      " KLAX    NBM V4.3 NBP GUIDANCE    2/20/2026  0100 UTC"
+
+    We match:  optional-whitespace + STATION + whitespace + "NBM" or "NBP"
+    to handle both old (NBP only) and current (NBM V4.x NBP GUIDANCE) formats.
     """
-    # Match the station header line
-    pattern = rf"^{re.escape(station)}\s+NBP\s+"
+    # Match the station header line. The bulletin format is:
+    #   " KLAX    NBM V4.3 NBP GUIDANCE    2/20/2026  0100 UTC"
+    # The station ID appears at the START of its own line (after optional spaces
+    # on that same line). We use [ \t]* (spaces/tabs only, not \n) so we don't
+    # consume a blank line and accidentally match on the next line.
+    pattern = rf"^[ \t]*{re.escape(station)}[ \t]+NBM"
     matches = list(re.finditer(pattern, bulletin_text, re.MULTILINE))
+
+    # Fallback: old-style "KLAX   NBP" header (no "NBM" prefix)
+    if not matches:
+        pattern = rf"^[ \t]*{re.escape(station)}[ \t]+NBP"
+        matches = list(re.finditer(pattern, bulletin_text, re.MULTILINE))
+
     if not matches:
         logger.warning("Station %s not found in bulletin", station)
         return None
 
     start = matches[0].start()
-    # Find the next station block start (any all-caps 4-letter station code)
-    next_block = re.search(r"^[A-Z]{4}\s+NBP\s+", bulletin_text[start + 1:], re.MULTILINE)
+
+    # Skip past the end of the matched header line before searching for the
+    # next station — otherwise the search re-matches the same header (block = 1 char).
+    header_line_end = bulletin_text.find("\n", start)
+    if header_line_end == -1:
+        return bulletin_text[start:]
+    search_from = header_line_end + 1
+
+    # Find the next station block header (same no-newline anchor)
+    next_block = re.search(
+        r"^[ \t]*[A-Z]{4}[ \t]+NBM",
+        bulletin_text[search_from:],
+        re.MULTILINE,
+    )
+    if not next_block:
+        # Fallback: old-style header
+        next_block = re.search(
+            r"^[ \t]*[A-Z]{4}[ \t]+NBP",
+            bulletin_text[search_from:],
+            re.MULTILINE,
+        )
+
     if next_block:
-        end = start + 1 + next_block.start()
+        end = search_from + next_block.start()
         return bulletin_text[start:end]
     return bulletin_text[start:]
 
@@ -140,63 +176,72 @@ def extract_station_block(bulletin_text: str, station: str) -> Optional[str]:
 def _parse_row(block: str, row_label: str) -> Optional[list]:
     """
     Extract the values from a named row in the station block.
-    Row format: "TXNP5    62    48    65    50   ..."
-    Returns list of ints or None if the row is not found.
+
+    NBM V4.3 row format (pipe-delimited groups of two values):
+      " TXNP5  55  43| 64  48| 70  51| 75  55| ..."
+
+    The '|' characters are segment separators — we strip them before
+    parsing so that only the numeric values remain.
+
+    Returns flat list of ints in column order, or None if row not found.
     """
-    pattern = rf"^\s*{re.escape(row_label)}\s+([\d\s-]+)$"
+    pattern = rf"^\s*{re.escape(row_label)}\s+([\d\s|/-]+)$"
     m = re.search(pattern, block, re.MULTILINE)
     if not m:
         return None
-    return [int(x) for x in m.group(1).split()]
+    # Strip pipe characters then split on whitespace
+    raw = m.group(1).replace("|", " ")
+    tokens = raw.split()
+    try:
+        return [int(x) for x in tokens]
+    except ValueError:
+        return None
 
 
-def _find_tomorrow_max_column(block: str, valid_date: datetime.date) -> Optional[int]:
+def _find_tomorrow_max_column(block: str, valid_date: datetime.date) -> int:
     """
-    Finds the column index corresponding to tomorrow's MaxT (00Z period).
-    The DT/HR row in the bulletin marks valid UTC times.
+    Finds the flat column index (after pipe-stripping) for tomorrow's MaxT.
 
-    NBP columns alternate: ..., 00Z today, 12Z today, 00Z tomorrow, 12Z tomorrow, ...
-    MaxT is at 00Z of the target date (i.e. end of the day following).
+    NBM V4.3 column layout — each day has TWO values per group (00Z, 12Z):
+      SAT 21| SUN 22| ...
+      00  12| 00  12| ...
+      col0 col1 | col2 col3 | ...
 
-    Strategy: find the header row that contains date info and match tomorrow 00Z.
-    The simpler approach: MaxT columns are at even indices (0, 2, 4...) in the
-    TXNMN row, and the first 00Z column after the current time is tomorrow's max.
+    MaxT = 00Z value = even-indexed columns (0, 2, 4, ...).
+    The bulletin header row looks like:
+      "        SAT 21| SUN 22| MON 23|..."
 
-    For bulletins run at 19Z on date D, valid periods are typically:
-      col 0: 00Z D+1 (tomorrow's MaxT) — this is what we want
-      col 1: 12Z D+1 (tonight's MinT)
-      col 2: 00Z D+2
-      ...
-
-    This returns column index 0 (the first 00Z period) as tomorrow's MaxT.
-    We validate with the DT row if available.
+    We find which day-group contains valid_date and return the corresponding
+    even column index. Fall back to 0 (first column = soonest MaxT) on any error.
     """
-    # Look for a DT row with date info
-    dt_match = re.search(r"DT\s+(.*)", block)
-    if not dt_match:
-        # Default: column 0 is tomorrow's MaxT for 19Z runs
+    tomorrow_day = str(valid_date.day)   # e.g. "21"
+
+    # Look for the date header row — contains day numbers after "SAT", "SUN" etc.
+    # Format: "        SAT 21| SUN 22| MON 23|"
+    date_header_match = re.search(
+        r"(?:MON|TUE|WED|THU|FRI|SAT|SUN)[ \t]+\d+\|",
+        block,
+    )
+    if not date_header_match:
+        return 0  # Safest default — first column is the nearest MaxT
+
+    date_header_line = block[
+        block.rfind("\n", 0, date_header_match.start()) + 1:
+        block.find("\n", date_header_match.start())
+    ]
+
+    # Extract day numbers in order: ["21", "22", "23", ...]
+    day_numbers = re.findall(r"(?:MON|TUE|WED|THU|FRI|SAT|SUN)\s+(\d+)", date_header_line)
+    if not day_numbers:
         return 0
 
-    dt_line = dt_match.group(1)
-    tomorrow_str = valid_date.strftime("%-d/%m").lstrip("0")  # e.g. "20/02" on Windows needs adjustment
-    # Windows-compatible date formatting
-    tomorrow_day = str(valid_date.day)
-    tomorrow_month = str(valid_date.month)
-
-    # Try to find tomorrow's date in the DT header
-    # DT row often looks like: "/20     /20     /21     /21"
-    # where /20 means Feb 20 (day only)
-    day_pattern = rf"/{tomorrow_day}\b"
-    cols = re.findall(r"/(\d+)", dt_line)
-    if cols:
-        try:
-            idx = cols.index(tomorrow_day)
-            return idx
-        except ValueError:
-            pass
-
-    # Fallback: return 0 (valid for 19Z cycle where first column = tomorrow MaxT)
-    return 0
+    try:
+        group_idx = day_numbers.index(tomorrow_day)
+        # Each group = 2 flat columns (00Z and 12Z); MaxT = 00Z = even index
+        return group_idx * 2
+    except ValueError:
+        # valid_date not in header — use column 0 (nearest available MaxT)
+        return 0
 
 
 def parse_nbp_station_block(
