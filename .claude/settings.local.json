@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "WebFetch(domain:docs.kalshi.com)",
+      "WebFetch(domain:www.weather.gov)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:nomads.ncep.noaa.gov)",
+      "WebFetch(domain:vlab.noaa.gov)",
+      "WebFetch(domain:kalshi.com)",
+      "WebFetch(domain:help.kalshi.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:blend.mdl.nws.noaa.gov)",
+      "WebFetch(domain:theweatherguy.net)",
+      "Bash(findstr:*)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\saini\\\\Projects\\\\kalshi-edge-trader\" -Recurse -File)",
+      "Bash(Where-Object { $_FullName -notmatch '\\\\.idea|__pycache__|\\\\.git' })",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object:*)"
+    ]
+  }
+}
