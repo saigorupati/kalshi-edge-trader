@@ -224,6 +224,19 @@ def initialize() -> None:
 
     logger.info("Initializing Kalshi Edge Trader | mode=%s", TRADING_MODE)
 
+    # ── Validate required env vars before any network calls ──────────
+    missing = []
+    import os as _os
+    if not _os.getenv("AWS_ACCESS_KEY_ID"):
+        missing.append("AWS_ACCESS_KEY_ID")
+    if not _os.getenv("AWS_SECRET_ACCESS_KEY"):
+        missing.append("AWS_SECRET_ACCESS_KEY")
+    if missing:
+        raise EnvironmentError(
+            f"Missing required environment variables: {', '.join(missing)}\n"
+            "Go to Railway → your bot service → Variables and add them."
+        )
+
     # DynamoDB
     _db = DynamoClient()
     _db.ensure_tables_exist()
@@ -343,4 +356,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except EnvironmentError as exc:
+        logger.critical("=" * 60)
+        logger.critical("STARTUP FAILED — configuration error:")
+        logger.critical("%s", exc)
+        logger.critical("=" * 60)
+        sys.exit(1)
+    except Exception as exc:
+        logger.critical("STARTUP FAILED — unexpected error: %s", exc, exc_info=True)
+        sys.exit(1)

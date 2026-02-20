@@ -55,6 +55,36 @@ def _from_decimal(value) -> Optional[float]:
 
 class DynamoClient:
     def __init__(self):
+        # ── Credential pre-flight ───────────────────────────────────────
+        # Validate credentials are present before attempting any AWS call.
+        # Raises a clear EnvironmentError on Railway if vars are missing
+        # rather than the opaque botocore.NoCredentialsError.
+        if AWS_ACCESS_KEY_ID and not AWS_SECRET_ACCESS_KEY:
+            raise EnvironmentError(
+                "AWS_ACCESS_KEY_ID is set but AWS_SECRET_ACCESS_KEY is missing. "
+                "Set both in Railway → Service → Variables."
+            )
+        if AWS_SECRET_ACCESS_KEY and not AWS_ACCESS_KEY_ID:
+            raise EnvironmentError(
+                "AWS_SECRET_ACCESS_KEY is set but AWS_ACCESS_KEY_ID is missing. "
+                "Set both in Railway → Service → Variables."
+            )
+        if not AWS_ACCESS_KEY_ID and not AWS_SECRET_ACCESS_KEY:
+            # Neither explicit key is set — check the boto3 credential chain
+            # (instance profile, ~/.aws/credentials, etc.)
+            import botocore.session as _bs
+            _creds = _bs.get_session().get_credentials()
+            if _creds is None:
+                raise EnvironmentError(
+                    "No AWS credentials found. "
+                    "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in "
+                    "Railway → Service → Variables."
+                )
+
+        # ── Build boto3 session ─────────────────────────────────────────
+        # Explicit keys take priority; otherwise boto3 uses env/profile/role.
+        # Creating resource/client objects here is cheap — no network call
+        # happens until the first actual DynamoDB operation.
         kwargs = {"region_name": AWS_REGION}
         if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
             kwargs["aws_access_key_id"] = AWS_ACCESS_KEY_ID
@@ -66,6 +96,12 @@ class DynamoClient:
         self._calibration = self.resource.Table(DYNAMO_CALIBRATION_TABLE)
         self._trades = self.resource.Table(DYNAMO_TRADES_TABLE)
         self._daily_pnl = self.resource.Table(DYNAMO_DAILY_PNL_TABLE)
+
+        logger.info(
+            "DynamoDB client ready | region=%s | key=%s",
+            AWS_REGION,
+            (AWS_ACCESS_KEY_ID[:8] + "…") if AWS_ACCESS_KEY_ID else "credential-chain",
+        )
 
     # ------------------------------------------------------------------
     # Table management
