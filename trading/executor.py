@@ -129,6 +129,11 @@ class TradeExecutor:
                 "order_id": order_id,
                 "strategy": strategy,
                 "bracket_id": bracket_id,
+                # Temperature bucket bounds — used by dashboard for friendly labels
+                "temp_low": opp.market.temp_low,
+                "temp_high": opp.market.temp_high,
+                "is_open_low": opp.market.is_open_low,
+                "is_open_high": opp.market.is_open_high,
             }
             trade_id = self.db.put_trade(trade_record)
             logger.info(

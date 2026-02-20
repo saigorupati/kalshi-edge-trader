@@ -190,6 +190,11 @@ def _serialize_trade(trade: dict) -> dict:
         "resolved": trade.get("resolved", False),
         "resolved_yes": trade.get("resolved_yes"),
         "pnl": trade.get("pnl"),
+        # Temperature bucket bounds for friendly label (None on old records)
+        "temp_low": float(trade["temp_low"]) if trade.get("temp_low") is not None else None,
+        "temp_high": float(trade["temp_high"]) if trade.get("temp_high") is not None else None,
+        "is_open_low": trade.get("is_open_low", False),
+        "is_open_high": trade.get("is_open_high", False),
     }
 
 

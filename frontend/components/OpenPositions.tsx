@@ -4,22 +4,6 @@ import { useState } from 'react';
 import { OpenPosition, api, LimitSellResult } from '@/lib/api';
 import { clsx } from 'clsx';
 
-/**
- * Convert a raw Kalshi ticker like "KXHIGHCHI-26FEB26-T35" into a
- * human-readable label like "CHI 35-36° · Feb 26".
- *
- * Bucket floors by series:
- *   CHI / NY / MIA / LAX:  34, 35, 37, 39, 41, 43  (lowest=34, highest=43)
- *   PHX:                   61, 63, 65, 67, 69, 71  (lowest=61, highest=71)
- */
-const SERIES_BUCKETS: Record<string, number[]> = {
-  KXHIGHCHI:  [34, 35, 37, 39, 41, 43],
-  KXHIGHNY:   [34, 35, 37, 39, 41, 43],
-  KXHIGHMIA:  [34, 35, 37, 39, 41, 43],
-  KXHIGHLAX:  [34, 35, 37, 39, 41, 43],
-  KXHIGHTPHX: [61, 63, 65, 67, 69, 71],
-};
-
 const CITY_MAP: Record<string, string> = {
   KXHIGHCHI:  'CHI',
   KXHIGHNY:   'NYC',
@@ -38,32 +22,42 @@ function parseDatePart(raw: string): string {
   return `${month} ${day}`;
 }
 
-function friendlyTicker(ticker: string): string {
-  // e.g. "KXHIGHCHI-26FEB26-T35"
+/**
+ * Build a human-readable label from a position's actual temp bounds (preferred)
+ * or fall back to parsing the ticker string for old records without bounds.
+ *
+ * Examples:
+ *   is_open_low,  temp_high=42  → "NYC ≤42° · Feb 21"
+ *   is_open_high, temp_low=51   → "NYC ≥51° · Feb 21"
+ *   temp_low=43,  temp_high=44  → "NYC 43-44° · Feb 21"
+ */
+function friendlyTicker(
+  ticker: string,
+  temp_low?: number | null,
+  temp_high?: number | null,
+  is_open_low?: boolean,
+  is_open_high?: boolean,
+): string {
+  // Parse city and date from ticker regardless
   const parts = ticker.split('-');
   if (parts.length < 3) return ticker;
 
-  const series   = parts[0];                      // "KXHIGHCHI"
-  const datePart = parts[parts.length - 2];       // "26FEB26"
-  const suffix   = parts[parts.length - 1];       // "T35"
-  const match    = suffix.match(/^T(\d+)$/i);
+  const series   = parts[0];
+  const datePart = parts[parts.length - 2];
+  const city     = CITY_MAP[series] ?? series.replace('KXHIGH', '').replace(/^T/, '');
+  const date     = parseDatePart(datePart);
+
+  // Use stored bounds if available (accurate per-market data from Kalshi API)
+  if (is_open_low  && temp_high != null) return `${city} ≤${temp_high}° · ${date}`;
+  if (is_open_high && temp_low  != null) return `${city} ≥${temp_low}° · ${date}`;
+  if (temp_low != null && temp_high != null) return `${city} ${temp_low}-${temp_high}° · ${date}`;
+
+  // Fallback: parse T{N} suffix from ticker (for old records without stored bounds)
+  const suffix = parts[parts.length - 1];
+  const match  = suffix.match(/^T(\d+)$/i);
   if (!match) return ticker;
-
-  const n       = parseInt(match[1], 10);
-  const buckets = SERIES_BUCKETS[series];
-  const city    = CITY_MAP[series] ?? series.replace('KXHIGH', '').replace(/^T/, '');
-  const date    = parseDatePart(datePart);
-
-  let range: string;
-  if (buckets) {
-    if (n === buckets[0])                       range = `≤${n}°`;
-    else if (n === buckets[buckets.length - 1]) range = `≥${n}°`;
-    else                                        range = `${n}-${n + 1}°`;
-  } else {
-    range = `${n}-${n + 1}°`;
-  }
-
-  return `${city} ${range} · ${date}`;
+  const n = parseInt(match[1], 10);
+  return `${city} ${n}-${n + 1}° · ${date}`;
 }
 
 interface Props {
@@ -194,7 +188,7 @@ function SellModal({
         <div className="px-4 pt-3 pb-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono text-text-secondary">
           <span>Ticker</span>
           <span className="text-text-primary truncate" title={position.ticker}>
-            {friendlyTicker(position.ticker)}
+            {friendlyTicker(position.ticker, position.temp_low, position.temp_high, position.is_open_low, position.is_open_high)}
           </span>
           <span>Contracts</span>
           <span className="text-text-primary">{position.count}</span>
@@ -374,7 +368,7 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
                   return (
                     <tr key={p.trade_id} className="animate-fade-in">
                       <td className="font-mono text-sm" title={p.ticker}>
-                        {friendlyTicker(p.ticker)}
+                        {friendlyTicker(p.ticker, p.temp_low, p.temp_high, p.is_open_low, p.is_open_high)}
                       </td>
                       <td className="text-right">{p.count}</td>
                       <td className="text-right">${entryPrice.toFixed(2)}</td>

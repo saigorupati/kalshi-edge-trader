@@ -28,6 +28,11 @@ export interface OpenPosition {
   unrealized_pnl?: number;
   current_price?: number;
   market_yes_bid?: number;
+  // Temperature bucket bounds (present on trades placed after this field was added)
+  temp_low?: number | null;
+  temp_high?: number | null;
+  is_open_low?: boolean;
+  is_open_high?: boolean;
 }
 
 export interface Trade {

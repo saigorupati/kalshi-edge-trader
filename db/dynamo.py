@@ -304,6 +304,15 @@ class DynamoClient:
         # (DynamoDB is schemaless — absent field == None when read back)
         if trade.get("bracket_id") is not None:
             item["bracket_id"] = trade["bracket_id"]
+        # Temperature bucket bounds (optional — absent on old records)
+        if trade.get("temp_low") is not None:
+            item["temp_low"] = _to_decimal(trade["temp_low"])
+        if trade.get("temp_high") is not None:
+            item["temp_high"] = _to_decimal(trade["temp_high"])
+        if trade.get("is_open_low") is not None:
+            item["is_open_low"] = bool(trade["is_open_low"])
+        if trade.get("is_open_high") is not None:
+            item["is_open_high"] = bool(trade["is_open_high"])
         self._trades.put_item(Item=item)
         logger.info(
             "Logged trade %s | %s | %s | count=%d | price=%d¢ | edge=%.1f%%",
