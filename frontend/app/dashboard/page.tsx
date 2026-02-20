@@ -217,11 +217,19 @@ export default function DashboardPage() {
           <div className="flex items-center gap-4 text-xs font-mono text-text-muted">
             <span
               className={`flex items-center gap-1.5 ${
-                wsStatus === 'connected' ? 'text-accent-green' : 'text-accent-yellow'
+                wsStatus === 'connected'
+                  ? 'text-accent-green'
+                  : wsStatus === 'error'
+                  ? 'text-accent-red'
+                  : 'text-accent-yellow'
               }`}
             >
-              <span className={wsStatus === 'connected' ? 'dot-green' : 'dot-yellow'} />
-              WS {wsStatus}
+              <span className={
+                wsStatus === 'connected' ? 'dot-green'
+                : wsStatus === 'error' ? 'dot-red'
+                : 'dot-yellow'
+              } />
+              {wsStatus === 'error' ? 'WS auth error — check API key' : `WS ${wsStatus}`}
             </span>
             {lastHeartbeat && (
               <span>♥ {lastHeartbeat.toLocaleTimeString()}</span>

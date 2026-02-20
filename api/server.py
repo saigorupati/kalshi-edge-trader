@@ -642,11 +642,15 @@ async def _broadcast_live_update():
 
 @app.websocket("/ws/live")
 async def websocket_live(websocket: WebSocket, api_key: Optional[str] = None):
-    # Validate API key for WS connections (passed as ?api_key=... query param)
+    # Must accept before we can send any close frame
+    await websocket.accept()
+
+    # Validate API key — reject after accept so the client receives a clean close
     if _API_KEY and api_key != _API_KEY:
+        logger.warning("WebSocket rejected: invalid API key")
         await websocket.close(code=4001)
         return
-    await websocket.accept()
+
     _ws_clients.append(websocket)
     logger.info("WebSocket client connected. Total: %d", len(_ws_clients))
     try:
