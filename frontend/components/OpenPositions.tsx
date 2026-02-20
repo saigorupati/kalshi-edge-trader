@@ -288,18 +288,29 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
               No open positions
             </div>
           ) : (
-            <table className="data-table w-full">
+            <table className="data-table w-full" style={{tableLayout:'fixed'}}>
+              <colgroup>
+                <col style={{width:'52px'}} />   {/* City   */}
+                <col />                           {/* Ticker — takes remaining space */}
+                <col style={{width:'40px'}} />   {/* Qty    */}
+                <col style={{width:'58px'}} />   {/* Entry$ */}
+                <col style={{width:'58px'}} />   {/* Last$  */}
+                <col style={{width:'60px'}} />   {/* Model% */}
+                <col style={{width:'48px'}} />   {/* Edge   */}
+                <col style={{width:'88px'}} />   {/* P&L    */}
+                <col style={{width:'60px'}} />   {/* Action */}
+              </colgroup>
               <thead>
                 <tr>
-                  <th style={{width:'52px'}}>City</th>
+                  <th>City</th>
                   <th>Ticker</th>
-                  <th style={{width:'44px'}} className="!text-right">Qty</th>
-                  <th style={{width:'60px'}} className="!text-right">Entry$</th>
-                  <th style={{width:'60px'}} className="!text-right">Bid$</th>
-                  <th style={{width:'64px'}} className="!text-right">Model%</th>
-                  <th style={{width:'50px'}} className="!text-right">Edge</th>
-                  <th style={{width:'96px'}} className="!text-right">Unreal. P&L</th>
-                  <th style={{width:'62px'}} className="!text-right">Action</th>
+                  <th className="!text-right">Qty</th>
+                  <th className="!text-right">Entry$</th>
+                  <th className="!text-right">Last$</th>
+                  <th className="!text-right">Model%</th>
+                  <th className="!text-right">Edge</th>
+                  <th className="!text-right" style={{whiteSpace:'nowrap'}}>Unreal P&L</th>
+                  <th className="!text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -313,7 +324,7 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
                       <td>
                         <span className="badge badge-cyan">{p.city}</span>
                       </td>
-                      <td className="text-text-secondary text-xs" style={{maxWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                      <td className="text-text-secondary text-xs" style={{overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                         {p.ticker}
                       </td>
                       <td className="text-right">{p.count}</td>

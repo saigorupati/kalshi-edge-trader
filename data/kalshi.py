@@ -451,6 +451,15 @@ class KalshiClient:
     # Orderbook
     # ------------------------------------------------------------------
 
+    def get_market(self, ticker: str) -> Optional[dict]:
+        """GET /markets/{ticker} — returns single market with last_price, yes_bid, yes_ask."""
+        try:
+            data = self._get(f"/markets/{ticker}")
+            return data.get("market", data)
+        except Exception as e:
+            logger.error("Failed to get market %s: %s", ticker, e)
+            return None
+
     def get_orderbook(self, ticker: str, depth: int = 10) -> Optional[KalshiOrderbook]:
         """GET /markets/{ticker}/orderbook"""
         try:

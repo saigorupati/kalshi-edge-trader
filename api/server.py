@@ -195,12 +195,13 @@ def _serialize_trade(trade: dict) -> dict:
 
 def _compute_market_data(trade: dict) -> dict:
     """
-    Fetches live orderbook for a trade and returns:
-      - unrealized_pnl: VWAP-based P&L (walks bid ladder against position size)
-      - current_price:  best YES ask (what the market is currently priced at)
+    Returns:
+      - current_price:  last traded price from GET /markets/{ticker}
+      - unrealized_pnl: VWAP P&L walking the bid ladder against position size
 
-    Both are returned in one orderbook fetch to avoid double API calls.
-    Returns a dict with None values if the orderbook is unavailable.
+    last_price is used for display because it reflects real traded prices and
+    avoids the stale-orderbook problem (e.g. a 100-cent resting bid inflating P&L).
+    VWAP is still computed from the live bid ladder for the P&L estimate.
     """
     result = {"unrealized_pnl": None, "current_price": None}
     if _kalshi is None:
@@ -208,19 +209,34 @@ def _compute_market_data(trade: dict) -> dict:
     try:
         count = trade["count"]
         entry_price = trade["price_cents"] / 100.0
+        ticker = trade["ticker"]
 
-        ob = _kalshi.get_orderbook(trade["ticker"], depth=20)
+        # --- Last traded price (display column) ---
+        mkt = _kalshi.get_market(ticker)
+        if mkt:
+            raw_last = mkt.get("last_price") or mkt.get("last_yes_price")
+            if raw_last is not None:
+                last_price = _kalshi._parse_price(raw_last)
+                # Sanity gate: ignore obviously stale 100-cent values
+                if 0.01 <= last_price <= 0.99:
+                    result["current_price"] = round(last_price, 2)
+
+        # --- VWAP P&L from bid ladder ---
+        ob = _kalshi.get_orderbook(ticker, depth=20)
         if ob is None:
             return result
 
-        # Current highest bid = best YES bid (what buyers are paying right now)
-        best_bid_price = ob.best_bid()
-        if best_bid_price is not None:
-            result["current_price"] = round(best_bid_price, 4)
-
-        # VWAP exit P&L — walk bid ladder
-        bids = sorted(ob.yes_bids, key=lambda x: x["price"], reverse=True)
+        # Filter out any bids at 99–100¢ — these are almost always stale artefacts
+        bids = sorted(
+            [b for b in ob.yes_bids if b["price"] < 0.99],
+            key=lambda x: x["price"],
+            reverse=True,
+        )
         if not bids:
+            # No valid bids — fall back to last_price for P&L if available
+            if result["current_price"] is not None:
+                lp = result["current_price"]
+                result["unrealized_pnl"] = round((lp - entry_price) * count, 4)
             return result
 
         remaining = count
@@ -233,6 +249,7 @@ def _compute_market_data(trade: dict) -> dict:
             remaining -= fill_qty
 
         if remaining > 0:
+            # Ladder too thin — mark remainder at best valid bid
             total_proceeds += remaining * bids[0]["price"]
 
         vwap_exit = total_proceeds / count
