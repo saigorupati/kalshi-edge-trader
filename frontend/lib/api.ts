@@ -1,9 +1,11 @@
 /**
  * Typed API client for the Kalshi Edge Trader FastAPI backend.
  * Reads NEXT_PUBLIC_API_URL from env (falls back to '' so Next.js rewrites work in dev).
+ * Sends X-API-Key header on every request when NEXT_PUBLIC_API_SECRET_KEY is set.
  */
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
+const API_KEY  = process.env.NEXT_PUBLIC_API_SECRET_KEY ?? '';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -162,8 +164,9 @@ export interface HealthData {
 // ── Fetch helper ─────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const authHeader = API_KEY ? { 'X-API-Key': API_KEY } : {};
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...authHeader, ...options?.headers },
     ...options,
   });
   if (!res.ok) {
@@ -171,6 +174,17 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(`API ${res.status}: ${body || res.statusText}`);
   }
   return res.json() as Promise<T>;
+}
+
+export interface LimitSellResult {
+  ticker: string;
+  trade_id: string;
+  order_id?: string;
+  sell_price_cents: number;
+  count: number;
+  pnl: number;
+  mode: string;
+  status: string;
 }
 
 // ── Endpoints ────────────────────────────────────────────────────
@@ -300,4 +314,12 @@ export const api = {
       { method: 'DELETE' }
     );
   },
+  limitSell: (ticker: string, tradeId: string, priceCents: number) =>
+    apiFetch<LimitSellResult>(
+      `/api/orders/${encodeURIComponent(ticker)}/sell`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ trade_id: tradeId, price_cents: priceCents }),
+      }
+    ),
 };

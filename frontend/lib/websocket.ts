@@ -45,13 +45,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
   const getWsUrl = useCallback(() => {
     const wsBase = process.env.NEXT_PUBLIC_WS_URL;
-    if (wsBase) return `${wsBase}/ws/live`;
+    const apiKey = process.env.NEXT_PUBLIC_API_SECRET_KEY ?? '';
+    const keyParam = apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '';
+    if (wsBase) return `${wsBase}/ws/live${keyParam}`;
     // In dev use current host but swap protocol
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = process.env.NEXT_PUBLIC_API_URL
       ? new URL(process.env.NEXT_PUBLIC_API_URL).host
       : window.location.host;
-    return `${protocol}//${host}/ws/live`;
+    return `${protocol}//${host}/ws/live${keyParam}`;
   }, []);
 
   const connect = useCallback(() => {

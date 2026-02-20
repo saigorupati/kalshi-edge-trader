@@ -21,10 +21,28 @@ import threading
 from typing import Any, Dict, List, Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security.api_key import APIKeyHeader
+from pydantic import BaseModel
 
 from config import CITIES, TRADING_MODE, STARTING_BALANCE, MAX_POSITION_PCT_PER_CITY, MAX_OPEN_POSITIONS, DAILY_STOP_LOSS_PCT
+
+# ---------------------------------------------------------------------------
+# API key authentication
+# ---------------------------------------------------------------------------
+_API_KEY = os.getenv("API_SECRET_KEY", "")
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def require_api_key(key: Optional[str] = Security(_api_key_header)) -> None:
+    """Dependency — rejects requests that don't carry the correct API key.
+    If API_SECRET_KEY is not set, the check is skipped (local dev convenience).
+    """
+    if not _API_KEY:
+        return  # No key configured — open access (dev/local only)
+    if key != _API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +165,17 @@ def update_scanner_state(
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Kalshi Edge Trader", version="1.0.0", docs_url="/api/docs")
+app = FastAPI(
+    title="Kalshi Edge Trader",
+    version="1.0.0",
+    docs_url="/api/docs",
+    dependencies=[Depends(require_api_key)],  # all routes protected
+)
+
+
+class LimitSellRequest(BaseModel):
+    trade_id: str
+    price_cents: int   # limit price in cents (1–99)
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "*")
 app.add_middleware(
@@ -488,6 +516,101 @@ async def cancel_order(order_id: str, trade_id: Optional[str] = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/orders/{ticker}/sell")
+async def limit_sell(ticker: str, body: LimitSellRequest):
+    """
+    Places a limit sell (YES) order for an existing open position.
+
+    In paper mode: marks the trade resolved immediately at the requested price
+    (simulates an instant fill) and records the P&L.
+
+    In live/demo mode: submits a real limit sell order to Kalshi and updates
+    the DynamoDB record to reflect the pending exit.
+
+    Body:
+        trade_id:    DynamoDB trade ID to match and resolve
+        price_cents: Limit price in cents (e.g. 25 = $0.25)
+    """
+    if _kalshi is None:
+        raise HTTPException(status_code=503, detail="Bot not initialized")
+    if not (1 <= body.price_cents <= 99):
+        raise HTTPException(status_code=400, detail="price_cents must be 1–99")
+
+    try:
+        open_trades = _db.get_open_trades() if _db is not None else []
+        matched = next((t for t in open_trades if t["trade_id"] == body.trade_id), None)
+        if not matched:
+            raise HTTPException(status_code=404, detail=f"Open trade {body.trade_id} not found")
+
+        count = matched.get("count", 1)
+        entry_cents = matched.get("price_cents", 0)
+        sell_price = body.price_cents / 100.0
+        entry_price = entry_cents / 100.0
+        pnl = round((sell_price - entry_price) * count, 4)
+
+        if TRADING_MODE == "paper":
+            # Paper mode: simulate instant fill at requested price
+            if _db is not None:
+                _db.mark_trade_resolved(
+                    trade_id=matched["trade_id"],
+                    timestamp=matched["timestamp"],
+                    resolved_yes=True,
+                    pnl=pnl,
+                )
+            if _risk is not None:
+                _risk.close_position(
+                    matched["city"],
+                    matched.get("dollar_risk", 0.0),
+                    market_ticker=matched.get("ticker", ""),
+                )
+            logger.info(
+                "[PAPER] Limit sell simulated: %s x%d @ %d¢ | P&L=%.4f",
+                ticker, count, body.price_cents, pnl,
+            )
+            return {
+                "ticker": ticker,
+                "trade_id": body.trade_id,
+                "sell_price_cents": body.price_cents,
+                "count": count,
+                "pnl": pnl,
+                "mode": "paper",
+                "status": "simulated_fill",
+            }
+
+        # Live/demo: place real limit sell order on Kalshi
+        order_result = _kalshi.place_order(
+            ticker=ticker,
+            side="yes",
+            action="sell",
+            count=count,
+            yes_price_cents=body.price_cents,
+        )
+        if order_result is None:
+            raise HTTPException(status_code=502, detail="Kalshi order placement failed")
+
+        order_id = order_result.get("order", {}).get("order_id", "")
+        logger.info(
+            "Limit sell placed: %s x%d @ %d¢ | order_id=%s",
+            ticker, count, body.price_cents, order_id,
+        )
+        return {
+            "ticker": ticker,
+            "trade_id": body.trade_id,
+            "order_id": order_id,
+            "sell_price_cents": body.price_cents,
+            "count": count,
+            "pnl": pnl,
+            "mode": TRADING_MODE,
+            "status": "resting",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Limit sell failed for %s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ---------------------------------------------------------------------------
 # WebSocket live feed
 # ---------------------------------------------------------------------------
@@ -518,7 +641,11 @@ async def _broadcast_live_update():
 
 
 @app.websocket("/ws/live")
-async def websocket_live(websocket: WebSocket):
+async def websocket_live(websocket: WebSocket, api_key: Optional[str] = None):
+    # Validate API key for WS connections (passed as ?api_key=... query param)
+    if _API_KEY and api_key != _API_KEY:
+        await websocket.close(code=4001)
+        return
     await websocket.accept()
     _ws_clients.append(websocket)
     logger.info("WebSocket client connected. Total: %d", len(_ws_clients))

@@ -88,7 +88,7 @@ Temperature prediction markets price the probability that a city's daily high wi
 ### Dashboard
 - **Bloomberg Terminal Aesthetic** — Dark theme with monospace fonts, color-coded P&L and risk signals
 - **Password Protected** — Single-user httpOnly cookie auth; set `DASHBOARD_PASSWORD` env var
-- **Live Open Positions** — Real-time table with unrealized P&L; EXIT button cancels live Kalshi order and marks trade resolved. Unrealized P&L uses a VWAP exit model — walks the live bid ladder depth-first against your actual contract count for an accurate mark-to-market value
+- **Live Open Positions** — Real-time table with unrealized P&L (VWAP bid-ladder mark). Each position has a **CLOSE** button that opens a modal with two tabs: **⚡ Quick Sell** (cancels the resting order instantly, P&L = $0) and **📉 Limit Sell** (places a limit sell at your specified price with live P&L preview; paper mode simulates an instant fill)
 - **WebSocket Push** — Bot broadcasts cycle updates to dashboard instantly; auto-reconnects with exponential backoff
 - **Opportunity Scanner** — Shows all single-bin markets with edge, plus a collapsible bracket opportunities panel; ranked by net edge / EV with visual bar indicators
 - **Equity Curve** — Recharts line chart with kill-switch event markers
@@ -242,6 +242,7 @@ python backtest.py --city LA --days 60
 | `AWS_SECRET_ACCESS_KEY` | — | AWS credentials |
 | `AWS_REGION` | `us-east-1` | DynamoDB region |
 | `FRONTEND_URL` | `*` | Dashboard URL for CORS (e.g., https://dashboard.railway.app) |
+| `API_SECRET_KEY` | — | Shared secret protecting all API endpoints — generate with `openssl rand -hex 32` |
 | `MIN_EDGE_THRESHOLD` | `0.05` | Minimum net edge to enter a trade (0.03 = looser, 0.08 = strict) |
 | `KELLY_FRACTION` | `0.25` | Fraction of full Kelly bet size (0.10 = tiny, 0.50 = half-Kelly) |
 
@@ -252,6 +253,7 @@ python backtest.py --city LA --days 60
 | `NEXT_PUBLIC_API_URL` | FastAPI backend URL (e.g., https://bot.railway.app) |
 | `NEXT_PUBLIC_WS_URL` | WebSocket URL (e.g., wss://bot.railway.app) |
 | `DASHBOARD_PASSWORD` | Password for the dashboard login page |
+| `NEXT_PUBLIC_API_SECRET_KEY` | Must match `API_SECRET_KEY` on the backend — sent as `X-API-Key` header on every request |
 
 ---
 
