@@ -164,11 +164,13 @@ export interface HealthData {
 // ── Fetch helper ─────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const authHeader = API_KEY ? { 'X-API-Key': API_KEY } : {};
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...authHeader, ...options?.headers },
-    ...options,
-  });
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (API_KEY) headers['X-API-Key'] = API_KEY;
+  if (options?.headers) {
+    const extra = options.headers as Record<string, string>;
+    Object.assign(headers, extra);
+  }
+  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`API ${res.status}: ${body || res.statusText}`);
