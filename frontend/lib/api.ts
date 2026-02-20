@@ -53,9 +53,10 @@ export interface PnLToday {
   date: string;
   win_count: number;
   loss_count: number;
+  open_positions: number;
   realized_pnl: number;
-  win_rate: number;
-  trade_count: number;
+  win_rate: number | null;   // null when no resolved trades yet
+  total_trades: number;
 }
 
 export interface PnLRecord {
@@ -68,14 +69,22 @@ export interface PnLRecord {
   kill_switch_triggered: boolean;
 }
 
+export interface CityExposureDetail {
+  display_name: string;
+  exposure: number;
+  budget: number;
+  pct_used: number;
+}
+
 export interface RiskStatus {
   kill_switch_active: boolean;
-  daily_loss: number;
   open_positions: number;
-  max_open_positions: number;
-  city_exposure: Record<string, number>;
-  max_city_exposure_pct: number;
+  max_positions: number;
+  day_start_balance: number;
   daily_stop_loss_pct: number;
+  stop_loss_threshold: number;
+  city_exposure: Record<string, CityExposureDetail>;
+  mode: string;
 }
 
 export interface MarketInfo {
@@ -141,23 +150,86 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ── Endpoints ────────────────────────────────────────────────────
 
+// ── Envelope unwrappers (server wraps arrays in {positions:[...], trades:[...], etc.}) ──
+
+async function fetchPositions(): Promise<OpenPosition[]> {
+  const res = await apiFetch<{ positions: OpenPosition[]; count: number }>('/api/positions/open');
+  return res.positions ?? [];
+}
+
+async function fetchTrades(date?: string, city?: string): Promise<Trade[]> {
+  const params = new URLSearchParams();
+  if (date) params.set('date', date);
+  if (city) params.set('city', city);
+  const qs = params.toString();
+  const res = await apiFetch<{ trades: Trade[]; count: number }>(`/api/trades${qs ? `?${qs}` : ''}`);
+  return res.trades ?? [];
+}
+
+async function fetchPnlHistory(): Promise<PnLRecord[]> {
+  const res = await apiFetch<{ history: PnLRecord[]; count: number }>('/api/pnl/history');
+  return res.history ?? [];
+}
+
+// Scanner: server returns opportunities as dict-by-city, flatten to array
+async function fetchScanner(): Promise<ScannerState> {
+  const raw = await apiFetch<{
+    last_updated: string | null;
+    cycle_number: number;
+    opportunities: Record<string, Array<{
+      ticker: string;
+      model_prob: number;
+      ask_price: number;
+      net_edge: number;
+      has_edge: boolean;
+    }>>;
+    dist_by_city: Record<string, { mu: number; sigma: number; bias_applied: number }>;
+  }>('/api/scanner');
+
+  // Flatten dict-by-city into a sorted array of Opportunity
+  const opps: Opportunity[] = [];
+  for (const [city, cityOpps] of Object.entries(raw.opportunities ?? {})) {
+    for (const o of cityOpps) {
+      opps.push({
+        city,
+        ticker:      o.ticker,
+        model_prob:  o.model_prob,
+        ask:         o.ask_price,
+        net_edge:    o.net_edge,
+        mu:          raw.dist_by_city?.[city]?.mu   ?? 0,
+        sigma:       raw.dist_by_city?.[city]?.sigma ?? 0,
+        is_open_low:  false,
+        is_open_high: false,
+      });
+    }
+  }
+  opps.sort((a, b) => b.net_edge - a.net_edge);
+
+  // Normalise city_distributions shape
+  const dists: ScannerState['city_distributions'] = {};
+  for (const [city, d] of Object.entries(raw.dist_by_city ?? {})) {
+    dists[city] = { mu: d.mu, sigma: d.sigma, bias_correction: d.bias_applied };
+  }
+
+  return {
+    cycle_number:       raw.cycle_number ?? 0,
+    last_updated:       raw.last_updated ?? new Date().toISOString(),
+    opportunities:      opps,
+    city_distributions: dists,
+  };
+}
+
 export const api = {
-  health:           ()                   => apiFetch<HealthData>('/api/health'),
-  balance:          ()                   => apiFetch<BalanceData>('/api/balance'),
-  openPositions:    ()                   => apiFetch<OpenPosition[]>('/api/positions/open'),
-  trades:           (date?: string, city?: string) => {
-    const params = new URLSearchParams();
-    if (date) params.set('date', date);
-    if (city) params.set('city', city);
-    const qs = params.toString();
-    return apiFetch<Trade[]>(`/api/trades${qs ? `?${qs}` : ''}`);
-  },
-  pnlToday:         ()                   => apiFetch<PnLToday>('/api/pnl/today'),
-  pnlHistory:       ()                   => apiFetch<PnLRecord[]>('/api/pnl/history'),
-  riskStatus:       ()                   => apiFetch<RiskStatus>('/api/risk/status'),
-  markets:          (city: string)       => apiFetch<MarketInfo[]>(`/api/markets/${city}`),
-  calibration:      (city: string)       => apiFetch<CalibrationRecord[]>(`/api/calibration/${city}`),
-  scanner:          ()                   => apiFetch<ScannerState>('/api/scanner'),
+  health:        ()                          => apiFetch<HealthData>('/api/health'),
+  balance:       ()                          => apiFetch<BalanceData>('/api/balance'),
+  openPositions: ()                          => fetchPositions(),
+  trades:        (date?: string, city?: string) => fetchTrades(date, city),
+  pnlToday:      ()                          => apiFetch<PnLToday>('/api/pnl/today'),
+  pnlHistory:    ()                          => fetchPnlHistory(),
+  riskStatus:    ()                          => apiFetch<RiskStatus>('/api/risk/status'),
+  markets:       (city: string)              => apiFetch<MarketInfo[]>(`/api/markets/${city}`),
+  calibration:   (city: string)              => apiFetch<CalibrationRecord[]>(`/api/calibration/${city}`),
+  scanner:       ()                          => fetchScanner(),
   cancelOrder: (orderId: string, tradeId?: string) => {
     const qs = tradeId ? `?trade_id=${encodeURIComponent(tradeId)}` : '';
     return apiFetch<{ success: boolean; message: string }>(

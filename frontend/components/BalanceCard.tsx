@@ -47,7 +47,8 @@ function StatCard({
 export default function BalanceCard({ balance, pnlToday, risk, lastUpdated }: Props) {
   const totalReturnPct = balance?.total_return_pct ?? 0;
   const todayPnl = pnlToday?.realized_pnl ?? 0;
-  const winRate = pnlToday?.win_rate ?? 0;
+  // win_rate comes from server as a 0–1 fraction (null when no resolved trades)
+  const winRate = ((pnlToday?.win_rate ?? 0) * 100);
   const openPos = risk?.open_positions ?? 0;
   const killSwitch = risk?.kill_switch_active ?? false;
 
@@ -83,10 +84,13 @@ export default function BalanceCard({ balance, pnlToday, risk, lastUpdated }: Pr
         />
         <StatCard
           label="Win Rate (today)"
-          value={pnlToday ? `${winRate.toFixed(0)}%` : '—'}
+          value={pnlToday && pnlToday.win_rate !== null ? `${winRate.toFixed(0)}%` : '—'}
           sub={`${openPos} open position${openPos !== 1 ? 's' : ''}`}
           accent={
-            winRate >= 80 ? 'green' : winRate >= 60 ? 'yellow' : 'red'
+            pnlToday?.win_rate === null ? 'yellow'
+              : winRate >= 80 ? 'green'
+              : winRate >= 60 ? 'yellow'
+              : 'red'
           }
         />
       </div>

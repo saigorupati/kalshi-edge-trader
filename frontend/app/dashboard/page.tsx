@@ -8,16 +8,16 @@ import {
   Trade,
   PnLToday,
   PnLRecord,
-  RiskStatus,
+  RiskStatus as RiskStatusData,
   ScannerState,
 } from '@/lib/api';
 import { useWebSocket, LiveUpdate } from '@/lib/websocket';
 
-import BalanceCard      from '@/components/BalanceCard';
-import OpenPositions    from '@/components/OpenPositions';
-import EquityCurve      from '@/components/EquityCurve';
-import CityForecasts    from '@/components/CityForecasts';
-import RiskStatus       from '@/components/RiskStatus';
+import BalanceCard        from '@/components/BalanceCard';
+import OpenPositions      from '@/components/OpenPositions';
+import EquityCurve        from '@/components/EquityCurve';
+import CityForecasts      from '@/components/CityForecasts';
+import RiskStatusPanel    from '@/components/RiskStatus';
 import RecentTrades     from '@/components/RecentTrades';
 import OpportunityScanner from '@/components/OpportunityScanner';
 
@@ -28,7 +28,7 @@ interface DashboardState {
   trades:      Trade[];
   pnlToday:    PnLToday | null;
   pnlHistory:  PnLRecord[];
-  risk:        RiskStatus | null;
+  risk:        RiskStatusData | null;
   scanner:     ScannerState | null;
   lastUpdated: Date | null;
   loading:     boolean;
@@ -253,7 +253,7 @@ export default function DashboardPage() {
             />
           </div>
           <div className="min-h-[280px]">
-            <RiskStatus risk={risk} />
+            <RiskStatusPanel risk={risk} />
           </div>
         </div>
 

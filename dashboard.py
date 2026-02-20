@@ -128,7 +128,7 @@ def build_portfolio_panel(tracker: PortfolioTracker, risk_status: dict) -> Panel
 
     lines = [
         f"Balance:       ${summary['balance']:>9.2f}   Mode: [bold]{TRADING_MODE.upper()}[/bold]",
-        f"Daily PnL:     {('$' + f'{summary[\"realized_pnl\"]:+.2f}') if summary['realized_pnl'] is not None else 'N/A':>10}",
+        f"Daily PnL:     {('$' + format(summary['realized_pnl'], '+.2f')) if summary['realized_pnl'] is not None else 'N/A':>10}",
         f"Open Positions:{summary['open_positions']:>4}  Trades Today: {summary['total_trades']}",
         f"W/L Today:     {summary['wins']}W / {summary['losses']}L   "
         f"30d Win Rate: {f'{win_rate*100:.0f}%' if win_rate is not None else 'N/A'}",
