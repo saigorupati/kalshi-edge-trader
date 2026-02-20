@@ -9,6 +9,7 @@ export interface LiveUpdate {
   timestamp: string;
   cycle_number?: number;
   opportunities?: unknown[];
+  bracket_opportunities?: unknown[];
   city_distributions?: Record<string, unknown>;
   balance?: number;
   open_positions?: number;

@@ -127,10 +127,11 @@ export default function DashboardPage() {
         setState((prev) => ({
           ...prev,
           scanner: {
-            cycle_number: msg.cycle_number ?? prev.scanner?.cycle_number ?? 0,
-            last_updated: msg.timestamp,
-            opportunities: msg.opportunities as ScannerState['opportunities'],
-            city_distributions: (msg.city_distributions as ScannerState['city_distributions']) ?? prev.scanner?.city_distributions ?? {},
+            cycle_number:          msg.cycle_number ?? prev.scanner?.cycle_number ?? 0,
+            last_updated:          msg.timestamp,
+            opportunities:         msg.opportunities as ScannerState['opportunities'],
+            bracket_opportunities: (msg.bracket_opportunities as ScannerState['bracket_opportunities']) ?? prev.scanner?.bracket_opportunities ?? [],
+            city_distributions:    (msg.city_distributions as ScannerState['city_distributions']) ?? prev.scanner?.city_distributions ?? {},
           },
         }));
       }
