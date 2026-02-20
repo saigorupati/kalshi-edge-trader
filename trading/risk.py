@@ -26,6 +26,7 @@ class RiskManager:
         self._today = datetime.date.today()
         self._open_position_count = 0
         self._city_exposure: Dict[str, float] = {}  # city → dollars at risk
+        self._open_tickers: set = set()              # market tickers with open positions
 
     # ------------------------------------------------------------------
     # Daily reset
@@ -39,6 +40,7 @@ class RiskManager:
         self._kill_switch_active = False
         self._open_position_count = 0
         self._city_exposure = {}
+        self._open_tickers = set()
         logger.info(
             "Daily risk reset: balance=%.2f | date=%s",
             current_balance, self._today,
@@ -80,6 +82,7 @@ class RiskManager:
         city: str,
         dollar_risk: float,
         current_balance: float,
+        market_ticker: str = "",
     ) -> Tuple[bool, str]:
         """
         Validates all pre-trade risk controls.
@@ -90,6 +93,9 @@ class RiskManager:
 
         if self._open_position_count >= MAX_OPEN_POSITIONS:
             return False, f"Max open positions reached ({MAX_OPEN_POSITIONS})"
+
+        if market_ticker and market_ticker in self._open_tickers:
+            return False, f"Already have an open position in {market_ticker}"
 
         city_budget = MAX_POSITION_PCT_PER_CITY * current_balance
         city_used = self._city_exposure.get(city, 0.0)
@@ -114,20 +120,24 @@ class RiskManager:
     # Position tracking
     # ------------------------------------------------------------------
 
-    def register_trade(self, city: str, dollar_risk: float) -> None:
+    def register_trade(self, city: str, dollar_risk: float, market_ticker: str = "") -> None:
         """Record a new open position."""
         self._open_position_count += 1
         self._city_exposure[city] = self._city_exposure.get(city, 0.0) + dollar_risk
+        if market_ticker:
+            self._open_tickers.add(market_ticker)
         logger.debug(
-            "Registered trade: city=%s risk=%.2f | open_positions=%d",
-            city, dollar_risk, self._open_position_count,
+            "Registered trade: city=%s ticker=%s risk=%.2f | open_positions=%d",
+            city, market_ticker, dollar_risk, self._open_position_count,
         )
 
-    def close_position(self, city: str, dollar_risk: float) -> None:
+    def close_position(self, city: str, dollar_risk: float, market_ticker: str = "") -> None:
         """Reduce city exposure when a position resolves."""
         self._open_position_count = max(0, self._open_position_count - 1)
         current = self._city_exposure.get(city, 0.0)
         self._city_exposure[city] = max(0.0, current - dollar_risk)
+        if market_ticker:
+            self._open_tickers.discard(market_ticker)
 
     def rebuild_from_open_trades(self, open_trades: list) -> None:
         """
@@ -139,8 +149,11 @@ class RiskManager:
             if trade.get("trade_date") == today:
                 city = trade["city"]
                 risk = trade.get("dollar_risk", 0.0) or 0.0
+                ticker = trade.get("ticker", "")
                 self._open_position_count += 1
                 self._city_exposure[city] = self._city_exposure.get(city, 0.0) + risk
+                if ticker:
+                    self._open_tickers.add(ticker)
         if open_trades:
             logger.info(
                 "Rebuilt risk state from %d open trades: positions=%d exposure=%s",
@@ -171,4 +184,5 @@ class RiskManager:
             "max_positions": MAX_OPEN_POSITIONS,
             "day_start_balance": self._day_start_balance,
             "city_exposure": dict(self._city_exposure),
+            "open_tickers": list(self._open_tickers),
         }

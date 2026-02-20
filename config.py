@@ -120,7 +120,7 @@ CITIES: Dict[str, CityConfig] = {
 # ---------------------------------------------------------------------------
 STARTING_BALANCE: float = float(os.getenv("STARTING_BALANCE", "1000.0"))
 MAX_POSITION_PCT_PER_CITY: float = 0.03   # 3% of balance max risk per city/day
-MAX_OPEN_POSITIONS: int = 5               # max simultaneous open positions
+MAX_OPEN_POSITIONS: int = 10              # max simultaneous open positions (2 per city × 5 cities)
 DAILY_STOP_LOSS_PCT: float = 0.05         # -5% triggers kill switch for the day
 MIN_EDGE_THRESHOLD: float = float(os.getenv("MIN_EDGE_THRESHOLD", "0.05"))  # minimum net edge required to trade
 KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.25"))        # fraction of full Kelly (safety)

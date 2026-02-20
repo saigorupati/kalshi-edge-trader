@@ -86,7 +86,9 @@ class TradeExecutor:
             return None
 
         # 2. Risk check
-        allowed, reason = self.risk.can_trade(city, dollar_risk, self.current_balance)
+        allowed, reason = self.risk.can_trade(
+            city, dollar_risk, self.current_balance, market_ticker=opp.market.ticker
+        )
         if not allowed:
             logger.info(
                 "%s: Risk check blocked trade on %s — %s (strategy=%s)",
@@ -139,7 +141,7 @@ class TradeExecutor:
             trade_id = "log-failed"
 
         # 5. Register with risk manager
-        self.risk.register_trade(city, dollar_risk)
+        self.risk.register_trade(city, dollar_risk, market_ticker=opp.market.ticker)
 
         return {
             "trade_id": trade_id,

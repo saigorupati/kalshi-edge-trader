@@ -437,7 +437,11 @@ async def cancel_order(order_id: str, trade_id: Optional[str] = None):
                     pnl=0.0,
                 )
                 if _risk is not None:
-                    _risk.close_position(matched["city"], matched.get("dollar_risk", 0.0))
+                    _risk.close_position(
+                        matched["city"],
+                        matched.get("dollar_risk", 0.0),
+                        market_ticker=matched.get("ticker", ""),
+                    )
                 response["trade_resolved"] = True
                 response["trade_id"] = trade_id
         return response
