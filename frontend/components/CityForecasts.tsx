@@ -12,7 +12,7 @@ const CITY_LABELS: Record<string, string> = {
   NYC: 'New York',
   MIA: 'Miami',
   CHI: 'Chicago',
-  SF:  'San Francisco',
+  PHX: 'Phoenix',
 };
 
 export default function CityForecasts({ scanner }: Props) {

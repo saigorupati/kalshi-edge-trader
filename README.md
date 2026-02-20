@@ -232,16 +232,18 @@ python backtest.py --city LA --days 60
 
 **Bot (`.env`):**
 
-| Variable | Description |
-|---|---|
-| `KALSHI_KEY_ID` | Kalshi API key ID |
-| `KALSHI_PRIVATE_KEY_PEM` | RSA private key (PEM format) |
-| `TRADING_MODE` | `paper`, `demo`, or `live` |
-| `STARTING_BALANCE` | Starting balance in USD (default: 1000) |
-| `AWS_ACCESS_KEY_ID` | AWS credentials |
-| `AWS_SECRET_ACCESS_KEY` | AWS credentials |
-| `AWS_REGION` | DynamoDB region (default: us-east-1) |
-| `FRONTEND_URL` | Dashboard URL for CORS (e.g., https://dashboard.railway.app) |
+| Variable | Default | Description |
+|---|---|---|
+| `KALSHI_KEY_ID` | — | Kalshi API key ID |
+| `KALSHI_PRIVATE_KEY_PEM` | — | RSA private key (PEM format) |
+| `TRADING_MODE` | `paper` | `paper`, `demo`, or `live` |
+| `STARTING_BALANCE` | `1000.0` | Starting balance in USD |
+| `AWS_ACCESS_KEY_ID` | — | AWS credentials |
+| `AWS_SECRET_ACCESS_KEY` | — | AWS credentials |
+| `AWS_REGION` | `us-east-1` | DynamoDB region |
+| `FRONTEND_URL` | `*` | Dashboard URL for CORS (e.g., https://dashboard.railway.app) |
+| `MIN_EDGE_THRESHOLD` | `0.05` | Minimum net edge to enter a trade (0.03 = looser, 0.08 = strict) |
+| `KELLY_FRACTION` | `0.25` | Fraction of full Kelly bet size (0.10 = tiny, 0.50 = half-Kelly) |
 
 **Dashboard (`frontend/.env.local`):**
 
@@ -284,10 +286,12 @@ Los Angeles (LA) · New York City (NYC) · Miami (MIA) · Chicago (CHI) · Phoen
 fee_cost  = KALSHI_FEE_RATE / ask_price     # proportional to premium, not flat
 raw_edge  = model_probability − ask_price
 net_edge  = raw_edge − fee_cost
-Trade if  net_edge > 5% AND 5¢ ≤ ask ≤ 95¢ AND spread ≤ 12¢
+Trade if  net_edge > MIN_EDGE_THRESHOLD AND 5¢ ≤ ask ≤ 95¢ AND spread ≤ 12¢
 ```
 
 The fee is expressed as a fraction of the premium paid (not a flat 1¢), because Kalshi charges ~1% of *notional* ($0.01 per $1 contract). At a 5¢ ask, that's effectively a 20% fee on the premium — which is why markets priced below 5¢ are filtered out.
+
+`MIN_EDGE_THRESHOLD` defaults to 5% but is tunable via env var. Setting it to 3% (~`0.03`) will let through more trades with thinner margins; be aware that at low ask prices the proportional fee consumes a large share of the edge.
 
 ### Bracket Strategy
 ```
@@ -305,11 +309,11 @@ Both strategies run simultaneously each cycle. Every trade is tagged `strategy="
 
 ### Kelly Criterion Sizing
 ```
-f*    = (p − q) / (1 − q)          # full Kelly
-size  = f* × 0.25                   # quarter-Kelly (conservative)
-cap   = min(size, 3% of balance)    # per-city daily cap
+f*    = (p − q) / (1 − q)                    # full Kelly
+size  = f* × KELLY_FRACTION                   # default: quarter-Kelly (0.25)
+cap   = min(size, 3% of balance)              # per-city daily cap
 ```
-Where `p` = model probability, `q` = 1 − p.
+Where `p` = model probability, `q` = 1 − p. `KELLY_FRACTION` defaults to `0.25` and is tunable via env var.
 
 For bracket trades, the city budget is split evenly across both legs (`per_leg_budget = city_remaining / 2`).
 

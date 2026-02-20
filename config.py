@@ -122,8 +122,8 @@ STARTING_BALANCE: float = float(os.getenv("STARTING_BALANCE", "1000.0"))
 MAX_POSITION_PCT_PER_CITY: float = 0.03   # 3% of balance max risk per city/day
 MAX_OPEN_POSITIONS: int = 5               # max simultaneous open positions
 DAILY_STOP_LOSS_PCT: float = 0.05         # -5% triggers kill switch for the day
-MIN_EDGE_THRESHOLD: float = 0.05          # minimum net edge required to trade
-KELLY_FRACTION: float = 0.25             # fraction of full Kelly (safety)
+MIN_EDGE_THRESHOLD: float = float(os.getenv("MIN_EDGE_THRESHOLD", "0.05"))  # minimum net edge required to trade
+KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.25"))        # fraction of full Kelly (safety)
 KALSHI_FEE_RATE: float = 0.01            # ~1% fee per contract (conservative)
 
 # ---------------------------------------------------------------------------
