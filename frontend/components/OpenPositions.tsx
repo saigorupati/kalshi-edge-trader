@@ -12,6 +12,24 @@ const CITY_MAP: Record<string, string> = {
   KXHIGHTPHX: 'PHX',
 };
 
+const KALSHI_SLUG: Record<string, string> = {
+  KXHIGHCHI:  'highest-temperature-in-chicago',
+  KXHIGHNY:   'highest-temperature-in-nyc',
+  KXHIGHMIA:  'highest-temperature-in-miami',
+  KXHIGHLAX:  'highest-temperature-in-los-angeles',
+  KXHIGHTPHX: 'phoenix-high-temperature-daily',
+};
+
+/** "KXHIGHTPHX-26FEB21-T70" → "https://kalshi.com/markets/kxhightphx/phoenix-high-temperature-daily/kxhightphx-26feb21" */
+function kalshiUrl(ticker: string): string {
+  const parts = ticker.split('-');
+  if (parts.length < 3) return 'https://kalshi.com';
+  const series    = parts[0];                          // "KXHIGHTPHX"
+  const eventTicker = parts.slice(0, -1).join('-');    // "KXHIGHTPHX-26FEB21"
+  const slug      = KALSHI_SLUG[series] ?? 'markets';
+  return `https://kalshi.com/markets/${series.toLowerCase()}/${slug}/${eventTicker.toLowerCase()}`;
+}
+
 /** "26FEB21" → "Feb 21" — Kalshi format is YRMONDD (year=26, month=FEB, day=21) */
 function parseDatePart(raw: string): string {
   const m = raw.match(/^(\d{2})([A-Z]{3})(\d{2})$/i);
@@ -187,9 +205,15 @@ function SellModal({
         {/* Position summary */}
         <div className="px-4 pt-3 pb-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono text-text-secondary">
           <span>Ticker</span>
-          <span className="text-text-primary truncate" title={position.ticker}>
+          <a
+            href={kalshiUrl(position.ticker)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={position.ticker}
+            className="text-text-primary truncate hover:text-accent-cyan underline-offset-2 hover:underline"
+          >
             {friendlyTicker(position.ticker, position.temp_low, position.temp_high, position.is_open_low, position.is_open_high)}
-          </span>
+          </a>
           <span>Contracts</span>
           <span className="text-text-primary">{position.count}</span>
           <span>Entry</span>
@@ -367,8 +391,16 @@ export default function OpenPositions({ positions, mode, onExitSuccess }: Props)
                   const mktDiff    = mktPrice !== null ? mktPrice - entryPrice : null;
                   return (
                     <tr key={p.trade_id} className="animate-fade-in">
-                      <td className="font-mono text-sm" title={p.ticker}>
-                        {friendlyTicker(p.ticker, p.temp_low, p.temp_high, p.is_open_low, p.is_open_high)}
+                      <td className="font-mono text-sm">
+                        <a
+                          href={kalshiUrl(p.ticker)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={p.ticker}
+                          className="hover:!text-accent-cyan underline-offset-2 hover:underline"
+                        >
+                          {friendlyTicker(p.ticker, p.temp_low, p.temp_high, p.is_open_low, p.is_open_high)}
+                        </a>
                       </td>
                       <td className="text-right">{p.count}</td>
                       <td className="text-right">${entryPrice.toFixed(2)}</td>

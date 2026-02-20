@@ -26,7 +26,12 @@
       "Bash(git commit:*)",
       "Bash(pip install:*)",
       "Bash(npm run build:*)",
-      "Bash(python -m json.tool:*)"
+      "Bash(python -m json.tool:*)",
+      "Bash(.venv\\\\Scripts\\\\python.exe:*)",
+      "Bash(cmd /c \".venv\\\\Scripts\\\\python.exe -c \"\"from data.kalshi import KalshiClient; from config import KALSHI_API_KEY, KALSHI_API_KEY_ID, TRADING_MODE; k = KalshiClient\\(api_key=KALSHI_API_KEY, key_id=KALSHI_API_KEY_ID, paper=\\(TRADING_MODE==''paper''\\)\\); m = k.get_market\\(''KXHIGHTPHX-26FEB21-T70''\\); print\\(''floor_strike:'', m.get\\(''floor_strike''\\) if m else ''NO MKT''\\); print\\(''ceil_strike:'', m.get\\(''ceil_strike''\\) if m else ''''\\); print\\(''strike_type:'', m.get\\(''strike_type''\\) if m else ''''\\); print\\(''yes_sub_title:'', m.get\\(''yes_sub_title''\\) if m else ''''\\); tl,th,ol,oh=k._parse_bounds_from_market\\(m\\); print\\(''parsed tl=%s th=%s ol=%s oh=%s''%\\(tl,th,ol,oh\\)\\)\"\"\")",
+      "Bash(cmd /c:*)",
+      "Bash(powershell:*)",
+      "Bash(del:*)"
     ]
   }
 }

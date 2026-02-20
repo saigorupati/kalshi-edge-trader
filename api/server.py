@@ -221,10 +221,16 @@ def _compute_market_data(trade: dict) -> dict:
         ticker = trade["ticker"]
 
         # --- Backfill temp bounds for old trades that don't have them ---
+        # NOTE: GET /markets/{ticker} returns the WRONG market (off-by-one bucket).
+        # Use get_markets_for_event() instead — it returns all buckets keyed by
+        # their correct ticker strings.
         if trade.get("temp_low") is None and trade.get("temp_high") is None and trade.get("is_open_low") is None:
-            mkt_raw = _kalshi.get_market(ticker)
-            if mkt_raw:
-                tl, th, ol, oh = _kalshi._parse_bounds_from_market(mkt_raw)
+            # Derive event ticker: "KXHIGHTPHX-26FEB21-T70" → "KXHIGHTPHX-26FEB21"
+            event_ticker = "-".join(ticker.split("-")[:-1])
+            markets = _kalshi.get_markets_for_event(event_ticker)
+            matched = next((m for m in markets if m.ticker == ticker), None)
+            if matched:
+                tl, th, ol, oh = matched.temp_low, matched.temp_high, matched.is_open_low, matched.is_open_high
                 result["temp_low"]     = tl
                 result["temp_high"]    = th
                 result["is_open_low"]  = ol
@@ -242,6 +248,8 @@ def _compute_market_data(trade: dict) -> dict:
                                     ticker, tl, th, ol, oh)
                     except Exception as e:
                         logger.warning("Failed to backfill temp bounds for %s: %s", ticker, e)
+            else:
+                logger.warning("Backfill: ticker %s not found in event %s markets", ticker, event_ticker)
 
         # --- VWAP P&L from bid ladder (also gives us current_price) ---
         ob = _kalshi.get_orderbook(ticker, depth=20)
