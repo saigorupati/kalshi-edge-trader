@@ -88,7 +88,7 @@ Temperature prediction markets price the probability that a city's daily high wi
 ### Dashboard
 - **Bloomberg Terminal Aesthetic** — Dark theme with monospace fonts, color-coded P&L and risk signals
 - **Password Protected** — Single-user httpOnly cookie auth; set `DASHBOARD_PASSWORD` env var
-- **Live Open Positions** — Real-time table with unrealized P&L; EXIT button cancels live Kalshi order and marks trade resolved
+- **Live Open Positions** — Real-time table with unrealized P&L; EXIT button cancels live Kalshi order and marks trade resolved. Unrealized P&L uses a VWAP exit model — walks the live bid ladder depth-first against your actual contract count for an accurate mark-to-market value
 - **WebSocket Push** — Bot broadcasts cycle updates to dashboard instantly; auto-reconnects with exponential backoff
 - **Opportunity Scanner** — Shows all single-bin markets with edge, plus a collapsible bracket opportunities panel; ranked by net edge / EV with visual bar indicators
 - **Equity Curve** — Recharts line chart with kill-switch event markers
@@ -263,7 +263,7 @@ The FastAPI backend exposes a full REST API and WebSocket feed. Interactive docs
 |---|---|---|
 | GET | `/api/health` | Bot status, mode, cycle count |
 | GET | `/api/balance` | Current balance, total return % |
-| GET | `/api/positions/open` | Open positions with unrealized P&L |
+| GET | `/api/positions/open` | Open positions with VWAP-based unrealized P&L |
 | GET | `/api/trades?date=&city=` | Trades for a given date/city |
 | GET | `/api/pnl/today` | Today's realized P&L, win/loss counts |
 | GET | `/api/pnl/history` | All daily P&L records |
@@ -319,7 +319,8 @@ For bracket trades, the city budget is split evenly across both legs (`per_leg_b
 
 ### Risk Controls
 - **Kill switch** — 5% max daily loss; halts all trading until next UTC day
-- **Position cap** — Max 10 simultaneous open positions
+- **Position cap** — Max 10 simultaneous open positions (2 per city × 5 cities)
+- **Duplicate ticker guard** — Bot will not re-enter a market ticker that already has an open position; prevents the same bin being bought twice across consecutive cycles. State is rebuilt from DynamoDB on restart so the guard survives redeploys
 - **City cap** — 3% of balance maximum exposure per city per day
 - **Ask gates** — 5¢ min (fee protection) and 95¢ max (no edge on near-certain markets)
 - **Spread gate** — Skip markets with bid/ask spread > 12¢ (illiquid)

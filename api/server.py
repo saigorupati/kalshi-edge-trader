@@ -188,19 +188,57 @@ def _serialize_trade(trade: dict) -> dict:
 
 
 def _compute_unrealized_pnl(trade: dict) -> Optional[float]:
-    """Estimate unrealized P&L by fetching the current orderbook bid."""
+    """
+    Estimate unrealized P&L using a volume-weighted average exit price (VWAP).
+
+    Walks the bid ladder from best to worst price, filling the position size
+    greedily.  This reflects the actual proceeds you'd receive if you sold
+    all contracts right now into the live order book.
+
+    Example: own 230 contracts, bids are 137@0.25, 143@0.24, 110@0.22
+      → fill 137 @ 0.25, 93 @ 0.24 (230 total filled)
+      → proceeds = 137*0.25 + 93*0.24 = 34.25 + 22.32 = 56.57
+      → VWAP exit = 56.57 / 230 = 0.2460
+      → unrealized P&L = (0.2460 - entry_price) * 230
+
+    Falls back to best_bid mark if the ladder is too thin to fill the full size,
+    using whatever partial fill VWAP is available for the filled portion plus
+    the best_bid as mark for the remainder.
+    """
     if _kalshi is None:
         return None
     try:
-        ob = _kalshi.get_orderbook(trade["ticker"], depth=3)
+        count = trade["count"]
+        entry_price = trade["price_cents"] / 100.0
+
+        # Fetch enough depth to cover most realistic position sizes
+        ob = _kalshi.get_orderbook(trade["ticker"], depth=20)
         if ob is None:
             return None
-        current_bid = ob.best_bid()
-        if current_bid is None:
+
+        # Sort bids descending (best price first)
+        bids = sorted(ob.yes_bids, key=lambda x: x["price"], reverse=True)
+        if not bids:
             return None
-        entry_price = trade["price_cents"] / 100.0
-        count = trade["count"]
-        return round((current_bid - entry_price) * count, 4)
+
+        remaining = count
+        total_proceeds = 0.0
+
+        for level in bids:
+            if remaining <= 0:
+                break
+            fill_qty = min(remaining, level["quantity"])
+            total_proceeds += fill_qty * level["price"]
+            remaining -= fill_qty
+
+        if remaining > 0:
+            # Ladder too thin — mark unfilled remainder at best bid
+            best_bid = bids[0]["price"]
+            total_proceeds += remaining * best_bid
+
+        vwap_exit = total_proceeds / count
+        return round((vwap_exit - entry_price) * count, 4)
+
     except Exception:
         return None
 
