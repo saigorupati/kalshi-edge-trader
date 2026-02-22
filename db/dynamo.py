@@ -395,6 +395,10 @@ class DynamoClient:
                     "pnl": _from_decimal(item.get("pnl")),
                     "strategy": item.get("strategy", "single"),
                     "bracket_id": item.get("bracket_id"),
+                    "temp_low": _from_decimal(item.get("temp_low")),
+                    "temp_high": _from_decimal(item.get("temp_high")),
+                    "is_open_low": item.get("is_open_low", False),
+                    "is_open_high": item.get("is_open_high", False),
                 }
             )
         return result

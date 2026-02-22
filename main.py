@@ -98,6 +98,12 @@ def trading_cycle() -> None:
         logger.error("Balance sync failed: %s", e)
         balance = _risk._current_balance
 
+    # --- Resolve settled paper trades and record P&L ---
+    try:
+        resolve_paper_trades()
+    except Exception as e:
+        logger.error("Paper trade resolution error: %s", e)
+
     # --- Kill switch check ---
     if _risk.check_kill_switch(balance):
         logger.warning("Kill switch active — skipping cycle #%d", _cycle_count)
@@ -203,6 +209,85 @@ def trading_cycle() -> None:
         logger.error("Failed to update scanner state: %s", e)
 
     logger.info("Cycle #%d complete.", _cycle_count)
+
+
+def resolve_paper_trades() -> None:
+    """
+    Check open paper trades against Kalshi settlement status and record P&L.
+
+    Called each trading cycle so settled markets are picked up within 30 minutes
+    of resolution. In live/demo mode this is a no-op — Kalshi handles settlement.
+    """
+    if TRADING_MODE != "paper":
+        return
+
+    try:
+        open_trades = _db.get_open_trades()
+    except Exception as e:
+        logger.error("resolve_paper_trades: failed to fetch open trades: %s", e)
+        return
+
+    if not open_trades:
+        return
+
+    for trade in open_trades:
+        ticker = trade.get("ticker", "")
+        if not ticker:
+            continue
+
+        try:
+            market = _kalshi.get_market(ticker)
+        except Exception as e:
+            logger.debug("resolve_paper_trades: could not fetch market %s: %s", ticker, e)
+            continue
+
+        if market is None:
+            continue
+
+        status = (market.get("status") or "").lower()
+        if status not in {"settled", "resolved"}:
+            continue
+
+        # Determine if YES resolved using the result field
+        result = (market.get("result") or "").lower()
+        if result == "yes":
+            resolved_yes = True
+        elif result == "no":
+            resolved_yes = False
+        else:
+            logger.debug(
+                "resolve_paper_trades: market %s settled but result=%r — skipping",
+                ticker, result,
+            )
+            continue
+
+        cost_per_contract = trade["price_cents"] / 100.0
+        count = trade["count"]
+
+        try:
+            pnl = _tracker.record_trade_pnl(
+                trade_id=trade["trade_id"],
+                timestamp=trade["timestamp"],
+                resolved_yes=resolved_yes,
+                cost_per_contract=cost_per_contract,
+                count=count,
+            )
+            if _risk is not None:
+                _risk.close_position(
+                    trade["city"],
+                    trade.get("dollar_risk", 0.0),
+                    market_ticker=ticker,
+                )
+            logger.info(
+                "[PAPER] Resolved %s: %s | x%d @ %.0f¢ | pnl=%+.4f",
+                ticker, "YES" if resolved_yes else "NO", count,
+                trade["price_cents"], pnl,
+            )
+        except Exception as e:
+            logger.error(
+                "resolve_paper_trades: failed to record P&L for trade %s: %s",
+                trade["trade_id"][:8], e,
+            )
 
 
 def daily_calibration_update() -> None:

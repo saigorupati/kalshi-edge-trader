@@ -463,12 +463,15 @@ async def get_scanner():
 async def cancel_order(order_id: str, trade_id: Optional[str] = None):
     """
     Cancels a Kalshi order. Optionally marks the DynamoDB trade as resolved.
-    In paper mode, cancels the mock position in DynamoDB only.
+    In paper mode, cancels the mock position in DynamoDB only (no Kalshi API call).
     """
     if _kalshi is None:
         raise HTTPException(status_code=503, detail="Bot not initialized")
     try:
-        result = _kalshi.cancel_order(order_id)
+        result = None
+        if TRADING_MODE != "paper":
+            result = _kalshi.cancel_order(order_id)
+
         response: dict = {
             "order_id": order_id,
             "cancel_result": result,
@@ -539,6 +542,8 @@ async def limit_sell(ticker: str, body: LimitSellRequest):
                     resolved_yes=True,
                     pnl=pnl,
                 )
+            if _tracker is not None:
+                _tracker.adjust_paper_balance(pnl)
             if _risk is not None:
                 _risk.close_position(
                     matched["city"],
