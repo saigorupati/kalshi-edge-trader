@@ -338,7 +338,7 @@ def initialize() -> None:
 
     # Balance
     if TRADING_MODE == "paper":
-        balance = STARTING_BALANCE
+        balance = STARTING_BALANCE  # temporary; overwritten by rebuild below
     else:
         try:
             balance = _kalshi.get_balance()
@@ -346,6 +346,19 @@ def initialize() -> None:
         except Exception as e:
             logger.error("Could not fetch balance: %s — using default", e)
             balance = STARTING_BALANCE
+
+    # Portfolio tracker — created early so paper balance can be rebuilt from DB
+    _tracker = PortfolioTracker(_db, _kalshi)
+    _tracker._balance = balance
+    _tracker._paper_balance = balance
+
+    # In paper mode: reconstruct balance from all resolved trade PnLs so it
+    # survives container restarts instead of always resetting to STARTING_BALANCE.
+    if TRADING_MODE == "paper":
+        try:
+            balance = _tracker.rebuild_paper_balance()
+        except Exception as e:
+            logger.warning("Could not rebuild paper balance from DB: %s", e)
 
     # Risk manager
     _risk = RiskManager(balance)
@@ -356,11 +369,6 @@ def initialize() -> None:
         _risk.rebuild_from_open_trades(open_trades)
     except Exception as e:
         logger.warning("Could not rebuild risk state from DynamoDB: %s", e)
-
-    # Portfolio tracker
-    _tracker = PortfolioTracker(_db, _kalshi)
-    _tracker._balance = balance
-    _tracker._paper_balance = balance
 
     # Trade executor
     _executor = TradeExecutor(_kalshi, _risk, _db, balance)

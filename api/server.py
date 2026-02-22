@@ -270,7 +270,13 @@ async def get_balance():
     if _kalshi is None:
         raise HTTPException(status_code=503, detail="Bot not initialized")
     try:
-        balance = _kalshi.get_balance()
+        # In paper mode use the tracker's in-memory balance (rebuilt from DB on
+        # startup and updated live as trades resolve) rather than the Kalshi API
+        # which always returns STARTING_BALANCE for paper accounts.
+        if TRADING_MODE == "paper" and _tracker is not None:
+            balance = _tracker.balance
+        else:
+            balance = _kalshi.get_balance()
         return {
             "balance": round(balance, 2),
             "mode": TRADING_MODE,
