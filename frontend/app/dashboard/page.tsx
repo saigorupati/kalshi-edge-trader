@@ -13,6 +13,7 @@ import {
 } from '@/lib/api';
 import { useWebSocket, LiveUpdate } from '@/lib/websocket';
 
+import Link               from 'next/link';
 import BalanceCard        from '@/components/BalanceCard';
 import OpenPositions      from '@/components/OpenPositions';
 import EquityCurve        from '@/components/EquityCurve';
@@ -215,6 +216,9 @@ export default function DashboardPage() {
             </span>
           </div>
           <div className="flex items-center gap-4 text-xs font-mono text-text-muted">
+            <Link href="/analytics" className="text-text-muted hover:text-accent-cyan transition-colors font-mono text-xs tracking-wide">
+              Analytics →
+            </Link>
             <span
               className={`flex items-center gap-1.5 ${
                 wsStatus === 'connected' ? 'text-accent-green' : 'text-accent-yellow'
