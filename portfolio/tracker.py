@@ -50,6 +50,29 @@ class PortfolioTracker:
         self._paper_balance += pnl
         logger.debug("Paper balance: %.2f (delta: %+.2f)", self._paper_balance, pnl)
 
+    def rebuild_paper_balance(self) -> float:
+        """
+        Reconstruct the paper balance from DynamoDB on startup.
+
+        Sums STARTING_BALANCE + all resolved trade PnLs so the balance
+        survives container restarts. Only meaningful in paper mode.
+        """
+        if TRADING_MODE != "paper":
+            return self._paper_balance
+        try:
+            all_trades = self.db.get_all_resolved_trades()
+        except Exception as e:
+            logger.error("rebuild_paper_balance: could not fetch resolved trades: %s", e)
+            return self._paper_balance
+
+        total_pnl = sum(t.get("pnl") or 0.0 for t in all_trades)
+        self._paper_balance = STARTING_BALANCE + total_pnl
+        logger.info(
+            "Paper balance rebuilt from DB: $%.2f (starting=$%.2f realized_pnl=%+.2f, %d resolved trades)",
+            self._paper_balance, STARTING_BALANCE, total_pnl, len(all_trades),
+        )
+        return self._paper_balance
+
     @property
     def balance(self) -> float:
         return self._paper_balance if TRADING_MODE == "paper" else self._balance

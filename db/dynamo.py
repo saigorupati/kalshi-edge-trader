@@ -358,6 +358,14 @@ class DynamoClient:
             )
         return self._deserialize_trades(resp.get("Items", []))
 
+    def get_all_resolved_trades(self) -> List[dict]:
+        """Scan for all resolved trades. Used to rebuild paper balance on startup."""
+        resp = self._trades.scan(
+            FilterExpression="resolved = :t",
+            ExpressionAttributeValues={":t": True},
+        )
+        return self._deserialize_trades(resp.get("Items", []))
+
     def get_daily_trades(self, date_str: str, city: Optional[str] = None) -> List[dict]:
         """Get all trades for a given date, optionally filtered by city."""
         if city:
