@@ -245,7 +245,8 @@ def resolve_paper_trades() -> None:
             continue
 
         status = (market.get("status") or "").lower()
-        if status not in {"settled", "resolved"}:
+        # Kalshi uses "finalized" for settled markets (not "settled" or "resolved")
+        if status not in {"settled", "resolved", "finalized"}:
             continue
 
         # Determine if YES resolved using the result field
