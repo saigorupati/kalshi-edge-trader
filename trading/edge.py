@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
-from config import MIN_EDGE_THRESHOLD, KALSHI_FEE_RATE
+from config import MIN_EDGE_THRESHOLD, KALSHI_FEE_RATE, BRACKET_MIN_LEG_EDGE, BRACKET_MIN_TOTAL_EDGE
 from data.kalshi import KalshiClient, KalshiMarket, KalshiOrderbook
 from models.temperature import TempDistribution, bin_probability
 
@@ -19,7 +19,6 @@ MAX_SPREAD_TO_TRADE = 0.12   # Skip illiquid markets with spread > 12 cents
 MIN_VOLUME_TO_TRADE = 5      # Skip markets with very low volume
 MIN_ASK_TO_TRADE = 0.05      # Skip markets priced below 5¢ — fee makes them unprofitable
 MAX_ASK_TO_TRADE = 0.95      # Skip near-certain markets — no meaningful edge possible
-BRACKET_MIN_EDGE  = 0.10     # Minimum sum of leg net_edges to enter a bracket trade
 
 
 @dataclass
@@ -235,8 +234,9 @@ def find_bracket_opportunities(
     From already-evaluated single-bin opportunities, find adjacent bounded-bin
     pairs that straddle mu and pass all three gates:
 
-        1. Each leg individually: net_edge >= MIN_EDGE_THRESHOLD
-        2. total_net_edge >= BRACKET_MIN_EDGE (10%)
+        1. Each leg individually: net_edge >= BRACKET_MIN_LEG_EDGE (2% default,
+           lower than the single-leg MIN_EDGE_THRESHOLD so mid-range bins qualify)
+        2. total_net_edge >= BRACKET_MIN_TOTAL_EDGE (7% default, configurable)
         3. EV > 0  i.e.  combined_model_prob > total_ask
 
     Returns at most 1 BracketOpportunity per call (the best-scoring pair).
@@ -244,14 +244,16 @@ def find_bracket_opportunities(
     bin centres are undefined and they cannot be adjacent to a bounded bin in
     a sensible way.
     """
-    # Keep only fully-bounded bins that individually pass the min edge gate
+    # Keep only fully-bounded bins that individually pass the bracket per-leg gate.
+    # This is intentionally lower than MIN_EDGE_THRESHOLD (single-leg gate) because
+    # mid-range bins near mu have smaller individual edges but strong combined EV.
     bounded = [
         o for o in opportunities
         if not o.market.is_open_low
         and not o.market.is_open_high
         and o.market.temp_low is not None
         and o.market.temp_high is not None
-        and o.net_edge >= MIN_EDGE_THRESHOLD
+        and o.net_edge >= BRACKET_MIN_LEG_EDGE
     ]
 
     if len(bounded) < 2:
@@ -286,11 +288,11 @@ def find_bracket_opportunities(
         ev            = combined_prob - total_ask  # simplified form
 
         # Gate 2: combined net edge
-        if total_net_edge < BRACKET_MIN_EDGE:
+        if total_net_edge < BRACKET_MIN_TOTAL_EDGE:
             logger.debug(
                 "%s: Bracket %s+%s skipped: total_net_edge=%.1f%% < %.1f%%",
                 city, lo.market.ticker, hi.market.ticker,
-                total_net_edge * 100, BRACKET_MIN_EDGE * 100,
+                total_net_edge * 100, BRACKET_MIN_TOTAL_EDGE * 100,
             )
             continue
 
@@ -310,7 +312,7 @@ def find_bracket_opportunities(
             profit_if_hit=profit_if_hit,
             total_net_edge=total_net_edge,
             expected_value=ev,
-            has_edge=True,
+            has_edge=total_net_edge >= BRACKET_MIN_TOTAL_EDGE,
             city=city,
         ))
 

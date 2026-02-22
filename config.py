@@ -122,7 +122,9 @@ STARTING_BALANCE: float = float(os.getenv("STARTING_BALANCE", "1000.0"))
 MAX_POSITION_PCT_PER_CITY: float = 0.03   # 3% of balance max risk per city/day
 MAX_OPEN_POSITIONS: int = 10              # max simultaneous open positions (2 per city × 5 cities)
 DAILY_STOP_LOSS_PCT: float = 0.05         # -5% triggers kill switch for the day
-MIN_EDGE_THRESHOLD: float = float(os.getenv("MIN_EDGE_THRESHOLD", "0.05"))  # minimum net edge required to trade
+MIN_EDGE_THRESHOLD: float = float(os.getenv("MIN_EDGE_THRESHOLD", "0.05"))  # minimum net edge required to trade (single-leg)
+BRACKET_MIN_LEG_EDGE: float = float(os.getenv("BRACKET_MIN_LEG_EDGE", "0.02"))  # per-leg edge floor for bracket candidates
+BRACKET_MIN_TOTAL_EDGE: float = float(os.getenv("BRACKET_MIN_TOTAL_EDGE", "0.07"))  # minimum combined net edge for a bracket
 KELLY_FRACTION: float = float(os.getenv("KELLY_FRACTION", "0.25"))        # fraction of full Kelly (safety)
 KALSHI_FEE_RATE: float = 0.01            # ~1% fee per contract (conservative)
 
