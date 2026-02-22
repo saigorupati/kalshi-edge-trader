@@ -53,6 +53,12 @@ export interface Trade {
   resolved_yes?: boolean;
   pnl?: number;
   timestamp: string;
+  trade_date?: string;
+  strategy?: string;
+  temp_low?: number | null;
+  temp_high?: number | null;
+  is_open_low?: boolean;
+  is_open_high?: boolean;
 }
 
 export interface PnLToday {
@@ -299,17 +305,56 @@ async function fetchScanner(): Promise<ScannerState> {
   };
 }
 
+// Fetch trades across a range of dates (for the analytics page)
+async function fetchTradesRange(days: number): Promise<Trade[]> {
+  const results: Trade[] = [];
+  const today = new Date();
+  const fetches = Array.from({ length: days }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    return d.toISOString().slice(0, 10);
+  }).map((date) =>
+    apiFetch<{ trades: Trade[]; count: number }>(`/api/trades?date=${date}`)
+      .then((r) => r.trades ?? [])
+      .catch(() => [] as Trade[])
+  );
+  const all = await Promise.all(fetches);
+  for (const batch of all) results.push(...batch);
+  // Deduplicate by trade_id
+  const seen = new Set<string>();
+  return results.filter((t) => {
+    if (seen.has(t.trade_id)) return false;
+    seen.add(t.trade_id);
+    return true;
+  });
+}
+
+// Fetch calibration records for all cities
+const ALL_CITIES = ['NYC', 'LA', 'CHI', 'PHX', 'DFW'];
+async function fetchCalibrationAll(days = 30): Promise<CalibrationRecord[]> {
+  const results = await Promise.allSettled(
+    ALL_CITIES.map((city) =>
+      apiFetch<{ records: CalibrationRecord[]; count: number }>(
+        `/api/calibration/${city}?days=${days}`
+      ).then((r) => r.records ?? [])
+    )
+  );
+  return results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+}
+
 export const api = {
-  health:        ()                          => apiFetch<HealthData>('/api/health'),
-  balance:       ()                          => apiFetch<BalanceData>('/api/balance'),
-  openPositions: ()                          => fetchPositions(),
-  trades:        (date?: string, city?: string) => fetchTrades(date, city),
-  pnlToday:      ()                          => apiFetch<PnLToday>('/api/pnl/today'),
-  pnlHistory:    ()                          => fetchPnlHistory(),
-  riskStatus:    ()                          => apiFetch<RiskStatus>('/api/risk/status'),
-  markets:       (city: string)              => apiFetch<MarketInfo[]>(`/api/markets/${city}`),
-  calibration:   (city: string)              => apiFetch<CalibrationRecord[]>(`/api/calibration/${city}`),
-  scanner:       ()                          => fetchScanner(),
+  health:           ()                             => apiFetch<HealthData>('/api/health'),
+  balance:          ()                             => apiFetch<BalanceData>('/api/balance'),
+  openPositions:    ()                             => fetchPositions(),
+  trades:           (date?: string, city?: string) => fetchTrades(date, city),
+  tradesRange:      (days: number)                 => fetchTradesRange(days),
+  pnlToday:         ()                             => apiFetch<PnLToday>('/api/pnl/today'),
+  pnlHistory:       ()                             => fetchPnlHistory(),
+  riskStatus:       ()                             => apiFetch<RiskStatus>('/api/risk/status'),
+  markets:          (city: string)                 => apiFetch<MarketInfo[]>(`/api/markets/${city}`),
+  calibration:      (city: string, days?: number)  => apiFetch<{ records: CalibrationRecord[] }>(`/api/calibration/${city}?days=${days ?? 30}`).then(r => r.records ?? []),
+  calibrationAll:   (days?: number)                => fetchCalibrationAll(days),
+  scanner:          ()                             => fetchScanner(),
   cancelOrder: (orderId: string, tradeId?: string) => {
     const qs = tradeId ? `?trade_id=${encodeURIComponent(tradeId)}` : '';
     return apiFetch<{ success: boolean; message: string }>(
