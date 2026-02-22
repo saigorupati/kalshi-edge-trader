@@ -124,7 +124,7 @@ class PortfolioTracker:
 
     def get_win_rate(self, lookback_days: int = 30) -> Optional[float]:
         """Returns win_count / total_resolved for last N days, or None if no data."""
-        cutoff = (datetime.date.today() - datetime.timedelta(days=lookback_days)).isoformat()
+        cutoff = (datetime.datetime.now(datetime.timezone.utc).date() - datetime.timedelta(days=lookback_days)).isoformat()
         try:
             all_pnl = self.db.get_all_daily_pnl()
         except Exception as e:
@@ -146,7 +146,7 @@ class PortfolioTracker:
     def get_daily_summary(self, date: Optional[datetime.date] = None) -> dict:
         """Returns today's or specified date's PnL summary."""
         if date is None:
-            date = datetime.date.today()
+            date = datetime.datetime.now(datetime.timezone.utc).date()
         date_str = date.isoformat()
 
         try:
@@ -179,7 +179,7 @@ class PortfolioTracker:
 
     def record_daily_snapshot(self) -> None:
         """Save today's PnL snapshot to DynamoDB. Called at end of day."""
-        today = datetime.date.today().isoformat()
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
         summary = self.get_daily_summary()
 
         try:

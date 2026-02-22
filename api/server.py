@@ -337,7 +337,7 @@ async def get_pnl_today():
     if _db is None:
         raise HTTPException(status_code=503, detail="Bot not initialized")
     try:
-        today = datetime.date.today().isoformat()
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
         trades = _db.get_daily_trades(today)
         resolved = [t for t in trades if t.get("resolved", False)]
         wins = sum(1 for t in resolved if t.get("resolved_yes", False))

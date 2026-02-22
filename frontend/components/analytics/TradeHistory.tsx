@@ -18,10 +18,14 @@ const STRATEGIES = ['All', 'single', 'bracket'];
 
 function friendlyMarket(trade: Trade): string {
   const { temp_low, temp_high, is_open_low, is_open_high, ticker } = trade;
-  // Try to build a label from stored bounds
+  // Open-ended bins: only label as open if temp_low/temp_high confirm the open side
+  if (is_open_low  && temp_low  == null && temp_high != null) return `≤${temp_high}°`;
+  if (is_open_high && temp_high == null && temp_low  != null) return `≥${temp_low}°`;
+  // Bounded bin: both bounds present
+  if (temp_low != null && temp_high != null) return `${temp_low}–${temp_high}°`;
+  // Single open-ended bound with only one value (older records)
   if (is_open_low  && temp_high != null) return `≤${temp_high}°`;
   if (is_open_high && temp_low  != null) return `≥${temp_low}°`;
-  if (temp_low != null && temp_high != null) return `${temp_low}–${temp_high}°`;
   // Fallback: parse T{N} from ticker
   const match = ticker?.split('-').pop()?.match(/^T(\d+)$/i);
   if (match) { const n = parseInt(match[1]); return `${n}–${n + 1}°`; }

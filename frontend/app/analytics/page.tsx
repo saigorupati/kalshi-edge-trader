@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { api, Trade, CalibrationRecord, PnLRecord } from '@/lib/api';
+import { api, Trade, CalibrationRecord, PnLRecord, PnLToday } from '@/lib/api';
 import TradeHistory    from '@/components/analytics/TradeHistory';
 import ModelAccuracy   from '@/components/analytics/ModelAccuracy';
 import PerformanceStats from '@/components/analytics/PerformanceStats';
@@ -46,12 +46,22 @@ function DailyPnLTooltip({ active, payload, label }: any) {
   );
 }
 
-function DailyPnLBar({ history }: { history: PnLRecord[] }) {
-  const data: DailyBarPoint[] = [...history]
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((r) => ({
-      date: (() => { try { return format(parseISO(r.date), 'MMM d'); } catch { return r.date; } })(),
-      pnl:  r.realized_pnl,
+function DailyPnLBar({ history, pnlToday }: { history: PnLRecord[]; pnlToday: PnLToday | null }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Build chart data from EOD snapshots, then overlay today's live P&L
+  const snapshotMap = new Map(history.map((r) => [r.date, r.realized_pnl]));
+
+  // Always override/inject today's bar with live data (more up-to-date than EOD snapshot)
+  if (pnlToday) {
+    snapshotMap.set(todayStr, pnlToday.realized_pnl);
+  }
+
+  const data: DailyBarPoint[] = [...snapshotMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, pnl]) => ({
+      date: (() => { try { return format(parseISO(date), 'MMM d'); } catch { return date; } })(),
+      pnl,
     }));
 
   return (
@@ -91,6 +101,7 @@ interface PageState {
   trades:      Trade[];
   calibration: CalibrationRecord[];
   history:     PnLRecord[];
+  pnlToday:    PnLToday | null;
   loading:     boolean;
   error:       string | null;
   lastUpdated: Date | null;
@@ -108,7 +119,7 @@ export default function AnalyticsPage() {
   const [tab,      setTab]      = useState<Tab>('performance');
   const [lookback, setLookback] = useState(30);
   const [state,    setState]    = useState<PageState>({
-    trades: [], calibration: [], history: [], loading: true, error: null, lastUpdated: null,
+    trades: [], calibration: [], history: [], pnlToday: null, loading: true, error: null, lastUpdated: null,
   });
 
   const mountedRef = useRef(true);
@@ -120,12 +131,13 @@ export default function AnalyticsPage() {
   const fetchData = useCallback(async (days: number) => {
     patch({ loading: true, error: null });
     try {
-      const [trades, calibration, history] = await Promise.all([
+      const [trades, calibration, history, pnlToday] = await Promise.all([
         api.tradesRange(days),
         api.calibrationAll(days),
         api.pnlHistory(),
+        api.pnlToday(),
       ]);
-      patch({ trades, calibration, history, loading: false, lastUpdated: new Date() });
+      patch({ trades, calibration, history, pnlToday, loading: false, lastUpdated: new Date() });
     } catch (e: unknown) {
       patch({ loading: false, error: e instanceof Error ? e.message : 'Failed to load analytics' });
     }
@@ -137,7 +149,7 @@ export default function AnalyticsPage() {
     return () => { mountedRef.current = false; };
   }, [fetchData, lookback]);
 
-  const { trades, calibration, history, loading, error, lastUpdated } = state;
+  const { trades, calibration, history, pnlToday, loading, error, lastUpdated } = state;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -229,7 +241,7 @@ export default function AnalyticsPage() {
         {!loading && !error && (
           <>
             {/* Always show daily P&L bar at top */}
-            <DailyPnLBar history={history} />
+            <DailyPnLBar history={history} pnlToday={pnlToday} />
 
             {/* Tab content */}
             {tab === 'performance' && (
