@@ -34,7 +34,7 @@ AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
 DYNAMO_CALIBRATION_TABLE = "kalshi-calibration"
 DYNAMO_TRADES_TABLE = "kalshi-trades"
 DYNAMO_DAILY_PNL_TABLE = "kalshi-daily-pnl"
-CALIBRATION_TTL_DAYS = 90
+CALIBRATION_TTL_DAYS = 3650  # ~10 years — keep all records for long-term backtesting
 TRADES_TTL_DAYS = 365
 
 

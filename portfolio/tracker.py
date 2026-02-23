@@ -143,6 +143,69 @@ class PortfolioTracker:
             return None
         return win_total / total
 
+    def get_win_rate_by_edge_bucket(self, lookback_days: int = 60) -> dict:
+        """
+        Returns win rate and trade count segmented by net edge bucket.
+
+        Buckets: "5-10%", "10-15%", ">15%"
+        Trades below 5% edge are excluded (below MIN_EDGE_THRESHOLD).
+
+        Returns a dict keyed by bucket name:
+            {"win_rate": float|None, "wins": int, "total": int}
+        """
+        cutoff = (
+            datetime.datetime.now(datetime.timezone.utc).date()
+            - datetime.timedelta(days=lookback_days)
+        ).isoformat()
+
+        try:
+            all_trades = self.db.get_all_resolved_trades()
+        except Exception as e:
+            logger.error("Failed to fetch resolved trades for edge bucket analysis: %s", e)
+            return {}
+
+        buckets: dict = {
+            "5-10%":  {"wins": 0, "total": 0},
+            "10-15%": {"wins": 0, "total": 0},
+            ">15%":   {"wins": 0, "total": 0},
+        }
+
+        for trade in all_trades:
+            if trade.get("timestamp", "") < cutoff:
+                continue
+            edge = trade.get("edge")
+            if edge is None:
+                continue
+
+            if 0.05 <= edge < 0.10:
+                key = "5-10%"
+            elif 0.10 <= edge < 0.15:
+                key = "10-15%"
+            elif edge >= 0.15:
+                key = ">15%"
+            else:
+                continue  # Below threshold — skip
+
+            buckets[key]["total"] += 1
+            if trade.get("resolved_yes", False):
+                buckets[key]["wins"] += 1
+
+        result = {}
+        for k, v in buckets.items():
+            result[k] = {
+                "win_rate": v["wins"] / v["total"] if v["total"] > 0 else None,
+                "wins": v["wins"],
+                "total": v["total"],
+            }
+
+        logger.info(
+            "Edge bucket win rates (last %dd): %s",
+            lookback_days,
+            {k: f"{v['win_rate']:.1%} ({v['wins']}/{v['total']})" if v["win_rate"] is not None else "no data"
+             for k, v in result.items()},
+        )
+        return result
+
     def get_daily_summary(self, date: Optional[datetime.date] = None) -> dict:
         """Returns today's or specified date's PnL summary."""
         if date is None:

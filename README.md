@@ -82,7 +82,7 @@ Temperature prediction markets price the probability that a city's daily high wi
 - **Single-Bin Edge Detection** — Minimum 5% net edge threshold after proportional fees; gates on ask price (5¢–95¢) and spread to avoid illiquid markets
 - **Bracket Strategy** — Simultaneously runs a 2-bin straddle strategy alongside single-bin; both strategies tagged in DynamoDB for P&L comparison over time
 - **Kill Switch** — Halts all trading automatically if daily loss exceeds 5% of day-start balance; resets at midnight UTC
-- **Calibration Engine** — Learns and corrects per-city forecast bias from DynamoDB historical records at 09:00 daily
+- **Calibration Engine** — Learns and corrects per-city forecast bias from DynamoDB historical records at 09:00 daily; includes statistical confidence gating and adaptive short-window blending for regime shifts
 - **NWS Sanity Check** — Cross-references NBM forecast against NWS API before trading
 
 ### Dashboard
@@ -312,10 +312,16 @@ Both strategies run simultaneously each cycle. Every trade is tagged `strategy="
 ### Kelly Criterion Sizing
 ```
 f*    = (p − q) / (1 − q)                    # full Kelly
-size  = f* × KELLY_FRACTION                   # default: quarter-Kelly (0.25)
+size  = f* × KELLY_FRACTION × drawdown_factor # default: quarter-Kelly (0.25)
 cap   = min(size, 3% of balance)              # per-city daily cap
 ```
-Where `p` = model probability, `q` = 1 − p. `KELLY_FRACTION` defaults to `0.25` and is tunable via env var.
+Where `p` = model probability, `q` = ask price. `KELLY_FRACTION` defaults to `0.25` and is tunable via env var.
+
+**Adaptive Kelly** — Each cycle the bot fetches the empirical win rate over the last 7 days and scales position size down proportionally if it falls below a 55% baseline:
+```
+drawdown_factor = clamp(recent_win_rate / 0.55, 0.5, 1.0)
+```
+At a 55%+ win rate the factor is 1.0 (no change). During drawdowns it can floor as low as 0.5×, halving position size to reduce variance and preserve capital until the model recovers.
 
 For bracket trades, the city budget is split evenly across both legs (`per_leg_budget = city_remaining / 2`).
 
@@ -331,9 +337,16 @@ For bracket trades, the city budget is split evenly across both legs (`per_leg_b
 ### Calibration
 Each morning at 09:00 UTC, the system:
 1. Looks up yesterday's actual high temperature (NWS historical data)
-2. Computes forecast error: `bias = actual − nbm_mu`
-3. Updates per-city bias correction and sigma scale in DynamoDB
-4. Applies corrections to today's model immediately
+2. Computes forecast error: `bias = mean(actual − nbm_mu)` over the last 30 days
+3. **Confidence gate** — Only applies the bias correction if it is statistically significant (`|bias| / SE ≥ 1.5`). On sparse or noisy data, the correction is zeroed out to avoid overcorrecting on noise.
+4. **Adaptive window** — Also computes bias over the most recent 7 days. If the 7-day bias diverges from the 30-day bias by more than 1.5°F (indicating a regime shift — e.g. a NBM model update), the applied correction blends 70% recent / 30% historical so adjustments kick in faster.
+5. Updates per-city sigma scale in the same pass
+6. Applies all corrections to the in-memory city configs for the next trading cycle
+
+Calibration records are retained for 10 years (previously 90 days) to support long-term backtesting.
+
+### Edge Bucket Win Rate Tracking
+The `PortfolioTracker` exposes `get_win_rate_by_edge_bucket(lookback_days=60)` which segments resolved trades into three buckets — `5-10%`, `10-15%`, and `>15%` net edge — and returns the empirical win rate and count for each. This lets you verify whether low-edge trades are actually profitable in practice and whether to raise `MIN_EDGE_THRESHOLD`.
 
 ---
 
