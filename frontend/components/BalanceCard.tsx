@@ -1,11 +1,12 @@
 'use client';
 
-import { BalanceData, PnLToday, RiskStatus } from '@/lib/api';
+import { BalanceData, PnLToday, PnLRecord, RiskStatus } from '@/lib/api';
 import { clsx } from 'clsx';
 
 interface Props {
   balance: BalanceData | null;
   pnlToday: PnLToday | null;
+  pnlHistory: PnLRecord[];
   risk: RiskStatus | null;
   lastUpdated: Date | null;
 }
@@ -44,17 +45,27 @@ function StatCard({
   );
 }
 
-export default function BalanceCard({ balance, pnlToday, risk, lastUpdated }: Props) {
+export default function BalanceCard({ balance, pnlToday, pnlHistory, risk, lastUpdated }: Props) {
   const totalReturnPct = balance?.total_return_pct ?? 0;
-  const todayPnl = pnlToday?.realized_pnl ?? 0;
-  // win_rate comes from server as a 0–1 fraction (null when no resolved trades)
-  const winRate = ((pnlToday?.win_rate ?? 0) * 100);
   const openPos = risk?.open_positions ?? 0;
   const killSwitch = risk?.kill_switch_active ?? false;
 
-  const returnAccent: 'green' | 'red' =
-    totalReturnPct >= 0 ? 'green' : 'red';
-  const pnlAccent: 'green' | 'red' = todayPnl >= 0 ? 'green' : 'red';
+  // Derive yesterday's date string and look it up in history
+  const yesterdayStr = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  const yesterday = pnlHistory.find((r) => r.date === yesterdayStr) ?? null;
+
+  const yPnl = yesterday?.realized_pnl ?? 0;
+  const yWins = yesterday?.win_count ?? 0;
+  const yLosses = yesterday?.loss_count ?? 0;
+  const yTotal = yWins + yLosses;
+  const yWinRate = yTotal > 0 ? (yWins / yTotal) * 100 : null;
+
+  const returnAccent: 'green' | 'red' = totalReturnPct >= 0 ? 'green' : 'red';
+  const pnlAccent: 'green' | 'red' = yPnl >= 0 ? 'green' : 'red';
 
   return (
     <div className="flex flex-col gap-2">
@@ -73,23 +84,19 @@ export default function BalanceCard({ balance, pnlToday, risk, lastUpdated }: Pr
           accent={returnAccent}
         />
         <StatCard
-          label="Today's P&L"
-          value={pnlToday ? `${todayPnl >= 0 ? '+' : ''}$${todayPnl.toFixed(2)}` : '—'}
-          sub={
-            pnlToday
-              ? `${pnlToday.win_count}W / ${pnlToday.loss_count}L`
-              : 'No trades today'
-          }
-          accent={pnlAccent}
+          label="Yesterday's P&L"
+          value={yesterday ? `${yPnl >= 0 ? '+' : ''}$${yPnl.toFixed(2)}` : '—'}
+          sub={yesterday ? `${yWins}W / ${yLosses}L` : 'No data yet'}
+          accent={yesterday ? pnlAccent : 'yellow'}
         />
         <StatCard
-          label="Win Rate (today)"
-          value={pnlToday && pnlToday.win_rate !== null ? `${winRate.toFixed(0)}%` : '—'}
+          label="Win Rate (yesterday)"
+          value={yWinRate !== null ? `${yWinRate.toFixed(0)}%` : '—'}
           sub={`${openPos} open position${openPos !== 1 ? 's' : ''}`}
           accent={
-            pnlToday?.win_rate === null ? 'yellow'
-              : winRate >= 80 ? 'green'
-              : winRate >= 60 ? 'yellow'
+            yWinRate === null ? 'yellow'
+              : yWinRate >= 80 ? 'green'
+              : yWinRate >= 60 ? 'yellow'
               : 'red'
           }
         />

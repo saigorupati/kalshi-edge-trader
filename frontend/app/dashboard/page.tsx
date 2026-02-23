@@ -257,6 +257,7 @@ export default function DashboardPage() {
         <BalanceCard
           balance={balance}
           pnlToday={pnlToday}
+          pnlHistory={pnlHistory}
           risk={risk}
           lastUpdated={lastUpdated}
         />
