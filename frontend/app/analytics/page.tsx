@@ -22,10 +22,10 @@ import { format, parseISO } from 'date-fns';
 
 type Tab = 'performance' | 'trades' | 'model';
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'performance', label: 'Performance' },
-  { id: 'trades',      label: 'Trade History' },
-  { id: 'model',       label: 'Model Accuracy' },
+const TABS: { id: Tab; label: string; shortLabel: string }[] = [
+  { id: 'performance', label: 'Performance',    shortLabel: 'Perf'   },
+  { id: 'trades',      label: 'Trade History',  shortLabel: 'Trades' },
+  { id: 'model',       label: 'Model Accuracy', shortLabel: 'Model'  },
 ];
 
 // ── Daily P&L bar chart ─────────────────────────────────────────────────────
@@ -163,15 +163,15 @@ export default function AnalyticsPage() {
             <Link href="/dashboard" className="text-text-muted text-xs font-mono hover:text-accent-cyan transition-colors">
               ← Dashboard
             </Link>
-            <span className="text-bg-border">|</span>
-            <span className="text-accent-cyan font-mono font-bold tracking-wider text-base">
+            <span className="hidden sm:inline text-bg-border">|</span>
+            <span className="hidden sm:inline text-accent-cyan font-mono font-bold tracking-wider text-base">
               ANALYTICS
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* Lookback selector */}
             <div className="flex items-center gap-1 text-xs font-mono">
-              <span className="text-text-muted mr-1">Lookback:</span>
+              <span className="hidden sm:inline text-text-muted mr-1">Lookback:</span>
               {LOOKBACK_OPTIONS.map((o) => (
                 <button
                   key={o.days}
@@ -191,10 +191,11 @@ export default function AnalyticsPage() {
               className="btn-ghost text-xs px-2 py-1"
               disabled={loading}
             >
-              {loading ? '↻' : '↺'} Refresh
+              {loading ? '↻' : '↺'}
+              <span className="hidden sm:inline"> Refresh</span>
             </button>
             {lastUpdated && (
-              <span className="text-text-muted text-xs font-mono">
+              <span className="hidden sm:inline text-text-muted text-xs font-mono">
                 {lastUpdated.toLocaleTimeString()}
               </span>
             )}
@@ -207,13 +208,14 @@ export default function AnalyticsPage() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-4 py-2 text-xs font-mono font-semibold tracking-wide transition-colors border-b-2 ${
+              className={`px-3 py-2 text-xs font-mono font-semibold tracking-wide transition-colors border-b-2 ${
                 tab === t.id
                   ? 'border-accent-cyan text-accent-cyan'
                   : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
             >
-              {t.label}
+              <span className="sm:hidden">{t.shortLabel}</span>
+              <span className="hidden sm:inline">{t.label}</span>
             </button>
           ))}
         </div>
