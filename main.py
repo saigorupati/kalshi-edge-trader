@@ -83,11 +83,19 @@ def trading_cycle() -> None:
     logger.info("Starting trading cycle #%d | mode=%s", _cycle_count, TRADING_MODE)
 
     # --- Daily reset check ---
+    # On a new day, settle yesterday's trades FIRST so that the day-start
+    # balance baseline reflects post-settlement capital, not pre-settlement.
+    # This prevents the kill switch from firing prematurely due to unrealized
+    # losses from yesterday that haven't cleared yet.
     today = datetime.date.today()
     if _risk._today != today:
-        balance = _tracker.sync_balance()
-        _risk.reset_daily(balance)
         _tracker.record_daily_snapshot()  # Save yesterday's snapshot first
+        try:
+            resolve_paper_trades()  # Settle yesterday's trades before recording baseline
+        except Exception as e:
+            logger.error("Paper trade resolution error (new-day pre-reset): %s", e)
+        balance = _tracker.sync_balance()  # Re-sync after settlements
+        _risk.reset_daily(balance)         # Baseline now reflects true starting capital
 
     # --- Sync balance ---
     try:
