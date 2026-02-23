@@ -48,6 +48,17 @@ function PnLTooltip({ active, payload, label }: any) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function WinLossTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const { name, value, payload: entry } = payload[0];
+  return (
+    <div className="bg-bg-card border border-bg-border rounded px-3 py-2 text-xs font-mono shadow-xl">
+      <p style={{ color: entry.fill }}>{name}: {value} ({entry.pct}%)</p>
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function CountTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
@@ -131,8 +142,8 @@ export default function PerformanceStats({ trades }: Props) {
   const totalWins   = resolved.filter((t) => t.resolved_yes).length;
   const totalLosses = resolved.length - totalWins;
   const pieData = [
-    { name: 'Wins',   value: totalWins,   fill: '#00ff88' },
-    { name: 'Losses', value: totalLosses, fill: '#ff3366' },
+    { name: 'Wins',   value: totalWins,   fill: '#00ff88', pct: pct(totalWins,   resolved.length) },
+    { name: 'Losses', value: totalLosses, fill: '#ff3366', pct: pct(totalLosses, resolved.length) },
   ].filter((d) => d.value > 0);
 
   const totalPnl = resolved.reduce((s, t) => s + (t.pnl ?? 0), 0);
@@ -198,10 +209,7 @@ export default function PerformanceStats({ trades }: Props) {
                       <Cell key={i} fill={entry.fill} opacity={0.85} />
                     ))}
                   </Pie>
-                  <Tooltip
-                    contentStyle={{ background: '#13131f', border: '1px solid #1e1e30', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono', color: '#e0e0ff' }}
-                    formatter={(v: number, name: string) => [`${v} (${pct(v, resolved.length)}%)`, name]}
-                  />
+                  <Tooltip content={<WinLossTooltip />} />
                   <Legend
                     formatter={(value: string) => <span style={{ color: '#8888aa', fontSize: 11 }}>{value}</span>}
                   />
