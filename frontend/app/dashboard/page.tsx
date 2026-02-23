@@ -209,18 +209,31 @@ export default function DashboardPage() {
         <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-accent-cyan font-mono font-bold tracking-wider text-base">
-              KALSHI EDGE TRADER
+              <span className="hidden sm:inline">KALSHI EDGE TRADER</span>
+              <span className="sm:hidden">KET</span>
             </span>
             <span className={`badge ${mode === 'live' ? 'badge-red' : mode === 'demo' ? 'badge-yellow' : 'badge-cyan'}`}>
               {mode.toUpperCase()}
             </span>
           </div>
-          <div className="flex items-center gap-4 text-xs font-mono text-text-muted">
+          <div className="flex items-center gap-3 text-xs font-mono text-text-muted">
             <Link href="/analytics" className="text-text-muted hover:text-accent-cyan transition-colors font-mono text-xs tracking-wide">
               Analytics →
             </Link>
+
+            {/* Mobile: single status dot only */}
             <span
-              className={`flex items-center gap-1.5 ${
+              className={`flex sm:hidden items-center gap-1.5 ${
+                wsStatus === 'connected' ? 'text-accent-green' : 'text-accent-yellow'
+              }`}
+              title={`WS ${wsStatus}${lastHeartbeat ? ` · ♥ ${lastHeartbeat.toLocaleTimeString()}` : ''}${lastUpdated ? ` · Updated ${lastUpdated.toLocaleTimeString()}` : ''}`}
+            >
+              <span className={wsStatus === 'connected' ? 'dot-green' : 'dot-yellow'} />
+            </span>
+
+            {/* Desktop: full indicators */}
+            <span
+              className={`hidden sm:flex items-center gap-1.5 ${
                 wsStatus === 'connected' ? 'text-accent-green' : 'text-accent-yellow'
               }`}
             >
@@ -228,10 +241,10 @@ export default function DashboardPage() {
               WS {wsStatus}
             </span>
             {lastHeartbeat && (
-              <span>♥ {lastHeartbeat.toLocaleTimeString()}</span>
+              <span className="hidden sm:inline">♥ {lastHeartbeat.toLocaleTimeString()}</span>
             )}
             {lastUpdated && (
-              <span>Updated {lastUpdated.toLocaleTimeString()}</span>
+              <span className="hidden md:inline">Updated {lastUpdated.toLocaleTimeString()}</span>
             )}
           </div>
         </div>
