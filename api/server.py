@@ -367,6 +367,45 @@ async def get_pnl_history():
         raise HTTPException(status_code=503, detail="Bot not initialized")
     try:
         records = _db.get_all_daily_pnl()
+
+        # Recompute realized_pnl, win_count, and loss_count from actual trade
+        # records so that historical snapshots stored as 0.0 are corrected.
+        all_resolved = _db.get_all_resolved_trades()
+        pnl_by_date: dict = {}
+        wins_by_date: dict = {}
+        losses_by_date: dict = {}
+        for t in all_resolved:
+            d = t.get("trade_date", "")
+            if not d:
+                continue
+            pnl_by_date[d] = pnl_by_date.get(d, 0.0) + (t.get("pnl") or 0.0)
+            if t.get("resolved_yes"):
+                wins_by_date[d] = wins_by_date.get(d, 0) + 1
+            else:
+                losses_by_date[d] = losses_by_date.get(d, 0) + 1
+
+        # Override stored values with trade-derived values
+        for r in records:
+            d = r["date"]
+            if d in pnl_by_date:
+                r["realized_pnl"] = round(pnl_by_date[d], 2)
+                r["win_count"] = wins_by_date.get(d, r.get("win_count", 0))
+                r["loss_count"] = losses_by_date.get(d, r.get("loss_count", 0))
+
+        # Include days that have resolved trades but no snapshot yet
+        existing_dates = {r["date"] for r in records}
+        for d, pnl in pnl_by_date.items():
+            if d not in existing_dates:
+                records.append({
+                    "date": d,
+                    "realized_pnl": round(pnl, 2),
+                    "win_count": wins_by_date.get(d, 0),
+                    "loss_count": losses_by_date.get(d, 0),
+                    "starting_balance": None,
+                    "ending_balance": None,
+                    "kill_switch_triggered": False,
+                })
+
         records.sort(key=lambda r: r["date"])
         return {"history": records, "count": len(records)}
     except Exception as e:

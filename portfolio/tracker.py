@@ -165,6 +165,11 @@ class PortfolioTracker:
         wins = sum(1 for t in resolved if t.get("resolved_yes", False))
         losses = len(resolved) - wins
 
+        # Compute realized P&L directly from resolved trade records so the
+        # daily snapshot is never written as 0.0 due to reading a missing/stale
+        # snapshot entry from the daily-pnl table.
+        realized_pnl = round(sum(t.get("pnl") or 0.0 for t in resolved), 2)
+
         return {
             "date": date_str,
             "balance": self.balance,
@@ -173,7 +178,7 @@ class PortfolioTracker:
             "wins": wins,
             "losses": losses,
             "win_rate": wins / len(resolved) if resolved else None,
-            "realized_pnl": pnl_record.get("realized_pnl", 0.0) if pnl_record else None,
+            "realized_pnl": realized_pnl,
             "mode": TRADING_MODE,
         }
 
