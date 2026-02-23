@@ -12,7 +12,7 @@ interface Props {
 type SortKey = 'timestamp' | 'city' | 'count' | 'price_cents' | 'edge' | 'model_prob' | 'pnl' | 'dollar_risk';
 type SortDir = 'asc' | 'desc';
 
-const CITIES = ['All', 'NYC', 'LA', 'CHI', 'PHX', 'DFW'];
+const CITIES = ['All', 'NYC', 'LA', 'CHI', 'PHX', 'MIA'];
 const RESULTS = ['All', 'WIN', 'LOSS', 'OPEN', 'EXIT'];
 const STRATEGIES = ['All', 'single', 'bracket'];
 

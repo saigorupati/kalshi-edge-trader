@@ -79,7 +79,7 @@ const CITY_COLORS: Record<string, string> = {
   LA:  '#00ff88',
   CHI: '#ff8c00',
   PHX: '#ff3366',
-  DFW: '#9b59ff',
+  MIA: '#9b59ff',
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
