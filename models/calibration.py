@@ -8,16 +8,20 @@ Computes bias correction and sigma scale from recent forecast errors:
 Updates city configs in memory. Called once at startup and daily at 09:00.
 """
 
+import datetime
 import logging
 from typing import Optional, Tuple
 
 import numpy as np
+import scipy.stats as scipy_stats
 
 from config import CITIES, CityConfig
 
 logger = logging.getLogger(__name__)
 
 MIN_RECORDS_FOR_CALIBRATION = 7  # Need at least this many actuals
+BIAS_CONFIDENCE_T_THRESHOLD = 1.5  # Min t-statistic to apply bias (~85% confidence)
+REGIME_SHIFT_THRESHOLD_F = 1.5  # °F divergence between 7d and 30d bias to trigger blend
 
 
 def compute_bias_correction(
@@ -47,6 +51,18 @@ def compute_bias_correction(
     errors = actuals - mus  # Positive = NBM underpredicts
     bias = float(np.mean(errors))
 
+    # Confidence gate: only apply bias if it's statistically significant.
+    # With few samples or noisy errors, the bias estimate could be noise.
+    std_err = float(np.std(errors, ddof=1)) / np.sqrt(len(errors))
+    if std_err > 0:
+        t_stat = abs(bias) / std_err
+        if t_stat < BIAS_CONFIDENCE_T_THRESHOLD:
+            logger.info(
+                "Bias %.2f°F not significant (t=%.2f < %.1f, n=%d) — zeroing",
+                bias, t_stat, BIAS_CONFIDENCE_T_THRESHOLD, len(records),
+            )
+            bias = 0.0
+
     # Sigma scale: how much larger should our sigma be vs NBM's reported sigma
     # A scale > 1 means NBM is overconfident
     if np.mean(sigmas) > 0:
@@ -66,22 +82,48 @@ def compute_bias_correction(
 def update_city_calibration(db_client) -> None:
     """
     Recomputes bias and sigma scale for each city using DynamoDB history.
+    Uses a 30-day window by default. If the 7-day bias diverges from the
+    30-day bias by more than REGIME_SHIFT_THRESHOLD_F, blends toward recent
+    data (70% 7-day / 30% 30-day) to handle model updates or weather regime
+    shifts faster.
+
     Updates CITIES config in-memory.
 
     Args:
         db_client: DynamoClient instance
     """
+    cutoff_7d = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
+
     for city_code, city_cfg in CITIES.items():
         try:
-            records = db_client.get_calibration_history(city_code, lookback_days=30)
-            bias, scale = compute_bias_correction(records)
+            records_30d = db_client.get_calibration_history(city_code, lookback_days=30)
+            records_7d = [r for r in records_30d if r["forecast_date"] >= cutoff_7d]
+
+            bias_30d, scale_30d = compute_bias_correction(records_30d)
+            bias_7d, scale_7d = compute_bias_correction(records_7d)
+
+            # Regime shift detection: if recent 7-day window diverges sharply,
+            # weight it more heavily so corrections kick in faster.
+            if (
+                len(records_7d) >= MIN_RECORDS_FOR_CALIBRATION
+                and abs(bias_7d - bias_30d) > REGIME_SHIFT_THRESHOLD_F
+            ):
+                bias = 0.7 * bias_7d + 0.3 * bias_30d
+                scale = 0.7 * scale_7d + 0.3 * scale_30d
+                logger.info(
+                    "Regime shift detected for %s (7d_bias=%.2f°F vs 30d_bias=%.2f°F)"
+                    " — blending: bias=%.2f°F scale=%.3f",
+                    city_code, bias_7d, bias_30d, bias, scale,
+                )
+            else:
+                bias, scale = bias_30d, scale_30d
 
             city_cfg.bias_correction = bias
             city_cfg.sigma_scale = scale
 
             logger.info(
-                "Updated calibration %s: bias=%.2f°F sigma_scale=%.3f (n=%d)",
-                city_code, bias, scale, len(records),
+                "Updated calibration %s: bias=%.2f°F sigma_scale=%.3f (n30=%d n7=%d)",
+                city_code, bias, scale, len(records_30d), len(records_7d),
             )
         except Exception as e:
             logger.error("Calibration update failed for %s: %s", city_code, e)

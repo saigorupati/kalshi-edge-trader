@@ -13,20 +13,34 @@ We use quarter-Kelly (KELLY_FRACTION = 0.25) for safety.
 
 import logging
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 
 from config import KELLY_FRACTION, MAX_POSITION_PCT_PER_CITY
 
 logger = logging.getLogger(__name__)
 
+# Baseline win rate assumed when calibrating Kelly. If the realised win rate
+# drops significantly below this, the adaptive factor scales down position size.
+_KELLY_BASELINE_WIN_RATE = 0.55
+# Never scale Kelly below this factor, even during extended drawdowns.
+_KELLY_MIN_DRAWDOWN_FACTOR = 0.5
 
-def kelly_fraction(model_prob: float, ask_price: float) -> float:
+
+def kelly_fraction(
+    model_prob: float,
+    ask_price: float,
+    recent_win_rate: Optional[float] = None,
+) -> float:
     """
     Computes fractional Kelly bet size as a fraction of bankroll.
 
     Args:
-        model_prob: Our P(YES resolves)
-        ask_price:  Cost per contract (0.0–1.0, e.g. 0.45 = 45 cents)
+        model_prob:        Our P(YES resolves)
+        ask_price:         Cost per contract (0.0–1.0, e.g. 0.45 = 45 cents)
+        recent_win_rate:   Optional recent empirical win rate (e.g. from last 7
+                           days). When below the baseline of 55%, the Kelly
+                           fraction is scaled down proportionally (floor 0.5×)
+                           to preserve capital during drawdown periods.
 
     Returns:
         Fraction of total bankroll to risk (e.g. 0.02 = 2%)
@@ -41,6 +55,20 @@ def kelly_fraction(model_prob: float, ask_price: float) -> float:
     full_kelly = max(full_kelly, 0.0)  # No negative bets
 
     fractional = KELLY_FRACTION * full_kelly
+
+    # Adaptive Kelly: during drawdown periods (win rate below baseline),
+    # scale down to reduce variance and preserve capital.
+    if recent_win_rate is not None:
+        drawdown_factor = max(
+            _KELLY_MIN_DRAWDOWN_FACTOR,
+            min(1.0, recent_win_rate / _KELLY_BASELINE_WIN_RATE),
+        )
+        if drawdown_factor < 1.0:
+            logger.debug(
+                "Adaptive Kelly: win_rate=%.3f → drawdown_factor=%.3f",
+                recent_win_rate, drawdown_factor,
+            )
+        fractional *= drawdown_factor
 
     # Cap at max position per city
     capped = min(fractional, MAX_POSITION_PCT_PER_CITY)

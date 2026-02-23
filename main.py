@@ -106,6 +106,15 @@ def trading_cycle() -> None:
         logger.error("Balance sync failed: %s", e)
         balance = _risk._current_balance
 
+    # --- Update adaptive Kelly with recent win rate (last 7 days) ---
+    try:
+        recent_win_rate = _tracker.get_win_rate(lookback_days=7)
+        _executor.update_win_rate(recent_win_rate)
+        if recent_win_rate is not None:
+            logger.info("Adaptive Kelly win rate (7d): %.1f%%", recent_win_rate * 100)
+    except Exception as e:
+        logger.error("Failed to fetch win rate for adaptive Kelly: %s", e)
+
     # --- Resolve settled paper trades and record P&L ---
     try:
         resolve_paper_trades()

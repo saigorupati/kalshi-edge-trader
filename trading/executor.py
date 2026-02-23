@@ -31,9 +31,14 @@ class TradeExecutor:
         self.risk = risk_manager
         self.db = db_client
         self.current_balance = current_balance
+        self.recent_win_rate: Optional[float] = None  # set by caller each cycle
 
     def update_balance(self, balance: float) -> None:
         self.current_balance = balance
+
+    def update_win_rate(self, win_rate: Optional[float]) -> None:
+        """Update the recent win rate used for adaptive Kelly sizing."""
+        self.recent_win_rate = win_rate
 
     # ------------------------------------------------------------------
     # Single trade execution
@@ -64,7 +69,7 @@ class TradeExecutor:
         Returns order result dict or None if rejected.
         """
         # 1. Sizing
-        k_frac = kelly_fraction(opp.model_prob, opp.ask_price)
+        k_frac = kelly_fraction(opp.model_prob, opp.ask_price, self.recent_win_rate)
         if budget_override is not None:
             city_remaining = budget_override
         else:
