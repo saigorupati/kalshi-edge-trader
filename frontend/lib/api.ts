@@ -330,7 +330,7 @@ async function fetchTradesRange(days: number): Promise<Trade[]> {
 }
 
 // Fetch calibration records for all cities
-const ALL_CITIES = ['NYC', 'LA', 'CHI', 'PHX', 'DFW'];
+const ALL_CITIES = ['NYC', 'LA', 'CHI', 'PHX', 'MIA'];
 async function fetchCalibrationAll(days = 30): Promise<CalibrationRecord[]> {
   const results = await Promise.allSettled(
     ALL_CITIES.map((city) =>

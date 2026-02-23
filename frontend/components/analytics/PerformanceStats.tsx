@@ -25,7 +25,7 @@ const CITY_COLORS: Record<string, string> = {
   LA:  '#00ff88',
   CHI: '#ff8c00',
   PHX: '#ff3366',
-  DFW: '#9b59ff',
+  MIA: '#9b59ff',
 };
 
 function pct(v: number, total: number) {
@@ -199,7 +199,7 @@ export default function PerformanceStats({ trades }: Props) {
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{ background: '#13131f', border: '1px solid #1e1e30', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono' }}
+                    contentStyle={{ background: '#13131f', border: '1px solid #1e1e30', borderRadius: 6, fontSize: 12, fontFamily: 'JetBrains Mono', color: '#e0e0ff' }}
                     formatter={(v: number, name: string) => [`${v} (${pct(v, resolved.length)}%)`, name]}
                   />
                   <Legend
