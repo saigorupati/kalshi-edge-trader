@@ -55,33 +55,14 @@ export default function RiskStatus({ risk }: Props) {
     ? (risk.open_positions / risk.max_positions) * 100
     : 0;
 
-  // Approximate daily loss from threshold vs start balance
-  const dailyLossDollars = risk.day_start_balance - risk.stop_loss_threshold;
-  const lossLimit = dailyLossDollars > 0 ? dailyLossDollars : risk.day_start_balance * (risk.daily_stop_loss_pct / 100);
-
-  // We don't have current daily loss in dollars directly; use city exposure as a proxy
-  // Just show the stop-loss threshold info instead
-  const stopLossPct = risk.daily_stop_loss_pct;
-
   return (
     <div className="card h-full flex flex-col">
       <div className="card-header">
         <span className="card-title">Risk Status</span>
-        {risk.kill_switch_active ? (
-          <span className="badge badge-red">KILL SWITCH</span>
-        ) : (
-          <span className="badge badge-green">NORMAL</span>
-        )}
+        <span className="badge badge-green">NORMAL</span>
       </div>
 
       <div className="p-4 space-y-5 flex-1 overflow-auto">
-        {/* Kill switch banner */}
-        {risk.kill_switch_active && (
-          <div className="bg-red-950/40 border border-accent-red/40 rounded-lg px-4 py-3 text-sm text-accent-red font-mono">
-            ⚠ Daily loss limit hit. Trading halted until tomorrow 00:00 UTC.
-          </div>
-        )}
-
         {/* Positions used */}
         <div className="space-y-1.5">
           <div className="flex justify-between text-xs font-mono text-text-secondary">
@@ -104,17 +85,9 @@ export default function RiskStatus({ risk }: Props) {
           </div>
         </div>
 
-        {/* Stop loss info */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs font-mono text-text-secondary">
-            <span>Stop-Loss Threshold</span>
-            <span className="font-semibold text-text-primary">
-              -{stopLossPct.toFixed(0)}% / ${risk.stop_loss_threshold.toFixed(2)}
-            </span>
-          </div>
-          <div className="text-xs text-text-muted font-mono">
-            Day start: ${risk.day_start_balance.toFixed(2)} · Max loss: ${lossLimit.toFixed(2)}
-          </div>
+        {/* Day start balance */}
+        <div className="text-xs text-text-muted font-mono">
+          Day start: ${risk.day_start_balance.toFixed(2)}
         </div>
 
         {/* Per-city exposure */}

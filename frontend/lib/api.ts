@@ -78,7 +78,6 @@ export interface PnLRecord {
   realized_pnl: number;
   win_count: number;
   loss_count: number;
-  kill_switch_triggered: boolean;
 }
 
 export interface CityExposureDetail {
@@ -89,12 +88,9 @@ export interface CityExposureDetail {
 }
 
 export interface RiskStatus {
-  kill_switch_active: boolean;
   open_positions: number;
   max_positions: number;
   day_start_balance: number;
-  daily_stop_loss_pct: number;
-  stop_loss_threshold: number;
   city_exposure: Record<string, CityExposureDetail>;
   mode: string;
 }

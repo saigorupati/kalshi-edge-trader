@@ -133,7 +133,6 @@ def build_portfolio_panel(tracker: PortfolioTracker, risk_status: dict) -> Panel
         f"W/L Today:     {summary['wins']}W / {summary['losses']}L   "
         f"30d Win Rate: {f'{win_rate*100:.0f}%' if win_rate is not None else 'N/A'}",
         f"Total Return:  {returns['total_return_pct']:>+.1f}%  Days Running: {returns['days_running']}",
-        f"Kill Switch:   {'[bold red]ACTIVE[/bold red]' if risk_status.get('kill_switch') else '[green]OFF[/green]'}   "
         f"Open Positions: {risk_status.get('open_positions', 0)}/{risk_status.get('max_positions', 5)}",
     ]
 

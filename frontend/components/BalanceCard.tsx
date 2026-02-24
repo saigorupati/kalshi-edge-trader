@@ -48,7 +48,6 @@ function StatCard({
 export default function BalanceCard({ balance, pnlToday, pnlHistory, risk, lastUpdated }: Props) {
   const totalReturnPct = balance?.total_return_pct ?? 0;
   const openPos = risk?.open_positions ?? 0;
-  const killSwitch = risk?.kill_switch_active ?? false;
 
   // Derive yesterday's date string and look it up in history
   const yesterdayStr = (() => {
@@ -104,17 +103,8 @@ export default function BalanceCard({ balance, pnlToday, pnlHistory, risk, lastU
 
       {/* Status bar */}
       <div className="card px-4 py-2 flex items-center gap-4 text-xs font-mono">
-        {killSwitch ? (
-          <>
-            <span className="dot-red" />
-            <span className="text-accent-red font-semibold">KILL SWITCH ACTIVE — Trading halted</span>
-          </>
-        ) : (
-          <>
-            <span className="dot-green" />
-            <span className="text-accent-green font-semibold">ACTIVE</span>
-          </>
-        )}
+        <span className="dot-green" />
+        <span className="text-accent-green font-semibold">ACTIVE</span>
         <span className="text-text-muted ml-auto">
           {lastUpdated
             ? `Updated ${lastUpdated.toLocaleTimeString()}`

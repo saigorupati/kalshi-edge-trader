@@ -13,7 +13,6 @@ export interface LiveUpdate {
   city_distributions?: Record<string, unknown>;
   balance?: number;
   open_positions?: number;
-  kill_switch_active?: boolean;
 }
 
 interface UseWebSocketOptions {

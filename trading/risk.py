@@ -1,5 +1,5 @@
 """
-Risk management: daily loss limits, position caps, kill switch.
+Risk management: position caps and city exposure limits.
 
 The RiskManager keeps in-memory state per trading day.
 On startup, state is rebuilt from DynamoDB open trades.
@@ -10,7 +10,6 @@ import datetime
 from typing import Dict, Optional, Tuple
 
 from config import (
-    DAILY_STOP_LOSS_PCT,
     MAX_OPEN_POSITIONS,
     MAX_POSITION_PCT_PER_CITY,
 )
@@ -22,7 +21,6 @@ class RiskManager:
     def __init__(self, starting_balance: float):
         self._day_start_balance = starting_balance
         self._current_balance = starting_balance
-        self._kill_switch_active = False
         self._today = datetime.date.today()
         self._open_position_count = 0
         self._city_exposure: Dict[str, float] = {}  # city → dollars at risk
@@ -37,7 +35,6 @@ class RiskManager:
         self._today = datetime.date.today()
         self._day_start_balance = current_balance
         self._current_balance = current_balance
-        self._kill_switch_active = False
         self._open_position_count = 0
         self._city_exposure = {}
         self._open_tickers = set()
@@ -49,29 +46,6 @@ class RiskManager:
     def update_balance(self, balance: float) -> None:
         """Update the tracked balance (called after each cycle sync)."""
         self._current_balance = balance
-
-    # ------------------------------------------------------------------
-    # Kill switch
-    # ------------------------------------------------------------------
-
-    def check_kill_switch(self, current_balance: float) -> bool:
-        """
-        Returns True if kill switch should be active.
-        Triggered when current_balance < day_start * (1 - DAILY_STOP_LOSS_PCT).
-        Once triggered, stays active for the rest of the day.
-        """
-        if self._kill_switch_active:
-            return True
-
-        loss_threshold = self._day_start_balance * (1.0 - DAILY_STOP_LOSS_PCT)
-        if current_balance < loss_threshold:
-            self._kill_switch_active = True
-            loss_pct = (self._day_start_balance - current_balance) / self._day_start_balance
-            logger.critical(
-                "KILL SWITCH ACTIVATED: balance=%.2f < threshold=%.2f (loss=%.1f%%)",
-                current_balance, loss_threshold, loss_pct * 100,
-            )
-        return self._kill_switch_active
 
     # ------------------------------------------------------------------
     # Pre-trade checks
@@ -88,9 +62,6 @@ class RiskManager:
         Validates all pre-trade risk controls.
         Returns (allowed, reason_string).
         """
-        if self._kill_switch_active:
-            return False, "Kill switch active — no trading today"
-
         if self._open_position_count >= MAX_OPEN_POSITIONS:
             return False, f"Max open positions reached ({MAX_OPEN_POSITIONS})"
 
@@ -167,10 +138,6 @@ class RiskManager:
     # ------------------------------------------------------------------
 
     @property
-    def kill_switch_active(self) -> bool:
-        return self._kill_switch_active
-
-    @property
     def open_position_count(self) -> int:
         return self._open_position_count
 
@@ -179,7 +146,6 @@ class RiskManager:
 
     def status_summary(self) -> dict:
         return {
-            "kill_switch": self._kill_switch_active,
             "open_positions": self._open_position_count,
             "max_positions": MAX_OPEN_POSITIONS,
             "day_start_balance": self._day_start_balance,

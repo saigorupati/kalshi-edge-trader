@@ -121,11 +121,6 @@ def trading_cycle() -> None:
     except Exception as e:
         logger.error("Paper trade resolution error: %s", e)
 
-    # --- Kill switch check ---
-    if _risk.check_kill_switch(balance):
-        logger.warning("Kill switch active — skipping cycle #%d", _cycle_count)
-        return
-
     # --- Fetch NBM forecasts (one 33MB download for all 5 cities) ---
     logger.info("Fetching NBM forecasts...")
     try:

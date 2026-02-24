@@ -21,7 +21,6 @@ interface ChartPoint {
   date: string;
   balance: number;
   pnl: number;
-  killSwitch: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,9 +34,6 @@ function CustomTooltip({ active, payload, label }: any) {
       <p className={d.pnl >= 0 ? 'text-accent-green' : 'text-accent-red'}>
         Daily P&L: {d.pnl >= 0 ? '+' : ''}${d.pnl.toFixed(2)}
       </p>
-      {d.killSwitch && (
-        <p className="text-accent-red mt-1">⚠ Kill switch triggered</p>
-      )}
     </div>
   );
 }
@@ -49,7 +45,6 @@ export default function EquityCurve({ history }: Props) {
     })(),
     balance: r.ending_balance,
     pnl: r.realized_pnl,
-    killSwitch: r.kill_switch_triggered,
   }));
 
   const startBalance = history[0]?.starting_balance ?? 1000;
@@ -95,10 +90,7 @@ export default function EquityCurve({ history }: Props) {
                 stroke="#00d4ff"
                 strokeWidth={2}
                 dot={(props) => {
-                  const { cx, cy, payload } = props;
-                  if (payload.killSwitch) {
-                    return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={4} fill="#ff3366" stroke="none" />;
-                  }
+                  const { cx, cy } = props;
                   return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={2} fill="#00d4ff" stroke="none" />;
                 }}
                 activeDot={{ r: 5, fill: '#00d4ff', stroke: '#0a0a0f', strokeWidth: 2 }}

@@ -25,7 +25,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from config import CITIES, TRADING_MODE, STARTING_BALANCE, MAX_POSITION_PCT_PER_CITY, MAX_OPEN_POSITIONS, DAILY_STOP_LOSS_PCT
+from config import CITIES, TRADING_MODE, STARTING_BALANCE, MAX_POSITION_PCT_PER_CITY, MAX_OPEN_POSITIONS
 
 logger = logging.getLogger(__name__)
 
@@ -403,7 +403,7 @@ async def get_pnl_history():
                     "loss_count": losses_by_date.get(d, 0),
                     "starting_balance": None,
                     "ending_balance": None,
-                    "kill_switch_triggered": False,
+
                 })
 
         records.sort(key=lambda r: r["date"])
@@ -429,14 +429,9 @@ async def get_risk_status():
             "pct_used": round(exposure / budget * 100, 1) if budget > 0 else 0.0,
         }
     return {
-        "kill_switch_active": status["kill_switch"],
         "open_positions": status["open_positions"],
         "max_positions": MAX_OPEN_POSITIONS,
         "day_start_balance": round(status["day_start_balance"], 2),
-        "daily_stop_loss_pct": DAILY_STOP_LOSS_PCT * 100,
-        "stop_loss_threshold": round(
-            status["day_start_balance"] * (1 - DAILY_STOP_LOSS_PCT), 2
-        ),
         "city_exposure": city_details,
         "mode": TRADING_MODE,
     }
