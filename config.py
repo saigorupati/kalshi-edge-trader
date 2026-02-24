@@ -55,6 +55,7 @@ class CityConfig:
     # Calibration params — updated at runtime from DynamoDB history
     bias_correction: float = 0.0   # degrees F added to NBM median
     sigma_scale: float = 1.0       # multiplier on NBM std dev
+    t_df: float = 30.0             # t-distribution degrees of freedom (higher = more Gaussian)
 
 
 CITIES: Dict[str, CityConfig] = {
