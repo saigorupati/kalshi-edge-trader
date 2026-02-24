@@ -187,10 +187,6 @@ class TradeExecutor:
         if not opportunities:
             return []
 
-        if self.risk.kill_switch_active:
-            logger.warning("%s: Kill switch active — skipping", city)
-            return []
-
         # Pick the single best opportunity
         best = opportunities[0]
 
@@ -225,10 +221,6 @@ class TradeExecutor:
         rejected by sizing/risk.  A partial fill (one leg) returns a single-item
         list — the trade is still logged; caller decides whether to surface this.
         """
-        if self.risk.kill_switch_active:
-            logger.warning("%s: Kill switch active — skipping bracket", city)
-            return None
-
         shared_bracket_id = str(uuid.uuid4())
         city_remaining = max_risk_for_city(
             city, self.current_balance, self.risk.city_exposure(city)
@@ -281,10 +273,6 @@ class TradeExecutor:
         Both strategies share the same city risk budget independently — the risk
         manager's per-city exposure cap ensures neither over-commits.
         """
-        if self.risk.kill_switch_active:
-            logger.warning("%s: Kill switch active — skipping all strategies", city)
-            return []
-
         all_results: List[dict] = []
 
         # --- Single-bin leg ---
