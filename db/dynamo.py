@@ -244,7 +244,7 @@ class DynamoClient:
         cutoff = (date.today() - timedelta(days=lookback_days)).isoformat()
         resp = self._calibration.query(
             KeyConditionExpression=Key("city").eq(city)
-            & Key("forecast_date_cycle").begins_with(cutoff[:7]),  # year-month prefix
+            & Key("forecast_date_cycle").gte(cutoff),
         )
         records = []
         for item in resp.get("Items", []):
